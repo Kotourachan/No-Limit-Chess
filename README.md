@@ -55,3 +55,4 @@ npm test         # engine tests, 60 random full games, and AI-vs-AI games (takes
 
 Libraries vendored in `vendor/`: chess.js 1.4.0 and PeerJS 1.5.5 (so the site has no CDN dependencies).
 Game logic (`js/rules.js`, `js/poker.js`, `js/game.js`) has no UI or network code. `js/net.js` is the only file that knows about PeerJS.
+
