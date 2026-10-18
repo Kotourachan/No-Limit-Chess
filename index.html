@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>No-limit Chess</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<section id="lobby" class="screen center">
+  <h1>No-limit Chess</h1>
+  <p class="tag">Chess where every capture is a poker hand.</p>
+
+  <div class="panel lobby-panel">
+    <button id="btn-create" class="primary big">Create game</button>
+    <p class="hint">You get a code to send to a friend.</p>
+  </div>
+
+  <div class="panel lobby-panel">
+    <div class="joinrow">
+      <input id="join-code" maxlength="5" placeholder="CODE" autocomplete="off" autocapitalize="characters" spellcheck="false">
+      <button id="btn-join" class="primary">Join game</button>
+    </div>
+  </div>
+
+  <div class="panel lobby-panel">
+    <button id="btn-ai" class="secondary big">Play vs Computer</button>
+    <p class="hint">A simple AI for chess and poker. Handy for testing.</p>
+  </div>
+
+  <div class="panel lobby-panel">
+    <button id="btn-local" class="secondary">Local test (play both sides)</button>
+    <p class="hint">Handy for trying out the rules alone. Both players' cards are visible.</p>
+  </div>
+
+  <p id="lobby-msg" class="error"></p>
+
+  <details class="panel rules">
+    <summary>How it works</summary>
+    <ul>
+      <li>Normal chess until someone captures (the king just captures normally, no hand). A capture starts a heads-up poker mini-match.</li>
+      <li>Each side starts the mini-match with 3 BB plus their piece's value: a bishop (3) taking a pawn (1) is 6 BB against 4 BB, and a bishop taking a queen (9) is 6 BB against 12 BB. Values: pawn 1, knight 3, bishop 3, rook 5, queen 9.</li>
+      <li>Blinds are 0.5 / 1 BB. The capturer keeps the button for the whole exchange. Hands are played until one player is out of chips.</li>
+      <li>Win the mini-match and the capture stands. Lose it and the capture fails: pieces stay put and the move is spent. Recapturing on the same square works the same way, with the recapturer as the capturer.</li>
+      <li>The capturer must show their cards if called. The other player can muck a losing hand.</li>
+      <li>No chips carry between captures. Checkmate (or the usual draws) ends the game. A capture made while in check is forced and skips the hand.</li>
+    </ul>
+  </details>
+</section>
+
+<section id="ai" class="screen center" hidden>
+  <h2>Play vs Computer</h2>
+  <div class="panel lobby-panel">
+    <div class="optlabel">You play</div>
+    <div class="seg">
+      <label><input type="radio" name="aicolor" value="w" checked><span>White</span></label>
+      <label><input type="radio" name="aicolor" value="b"><span>Black</span></label>
+      <label><input type="radio" name="aicolor" value="r"><span>Random</span></label>
+    </div>
+    <div class="optlabel">Difficulty</div>
+    <div class="seg">
+      <label><input type="radio" name="ailevel" value="easy"><span>Easy</span></label>
+      <label><input type="radio" name="ailevel" value="normal" checked><span>Normal</span></label>
+    </div>
+    <p class="hint">Normal thinks about half a second per chess move. Neither level is strong.</p>
+  </div>
+  <div class="btnrow" style="justify-content:center">
+    <button id="btn-ai-start" class="primary big">Start game</button>
+    <button id="btn-ai-back" class="secondary">Back</button>
+  </div>
+</section>
+
+<section id="waiting" class="screen center" hidden>
+  <h2>Your game code</h2>
+  <div id="room-code" class="code">…</div>
+  <div class="panel lobby-panel">
+    <p class="hint">Or send this link:</p>
+    <div class="joinrow"><input id="share-link" readonly><button id="btn-copy" class="secondary">Copy</button></div>
+  </div>
+  <p id="wait-status" class="hint"></p>
+  <button id="btn-cancel" class="secondary">Cancel</button>
+</section>
+
+<section id="game" class="screen" hidden>
+  <header class="topbar">
+    <span id="status"></span>
+    <span id="room-tag" class="roomtag"></span>
+    <span class="spacer"></span>
+    <button id="btn-resign" class="small danger">Resign</button>
+    <button id="btn-leave" class="small secondary">Leave</button>
+  </header>
+  <div id="notice" class="notice" hidden></div>
+  <main class="layout">
+    <div class="left">
+      <div id="opp-bar" class="pbar"></div>
+      <div id="board"></div>
+      <div id="me-bar" class="pbar"></div>
+    </div>
+    <aside class="right">
+      <div id="poker" class="panel" hidden></div>
+      <div id="lasthand" class="panel" hidden></div>
+      <div id="log" class="panel log"></div>
+    </aside>
+  </main>
+
+  <div id="gameover" class="overlay" hidden>
+    <div class="modal">
+      <h2 id="go-title"></h2>
+      <p id="go-detail"></p>
+      <p id="go-wait" class="hint" hidden>Waiting for the host to start a rematch…</p>
+      <div class="btnrow">
+        <button id="btn-rematch" class="primary">Rematch (swap colors)</button>
+        <button id="btn-leave2" class="secondary">Leave</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="vendor/peerjs.min.js"></script>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

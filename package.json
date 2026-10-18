@@ -1,0 +1,19 @@
+{
+  "name": "nolimit-chess",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "node --test test/engine.test.js test/ai.test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "chess.js": "^1.4.0",
+    "peerjs": "^1.5.5"
+  }
+}
