@@ -49,6 +49,13 @@ All numbers are in `js/rules.js`.
 - Game ends on checkmate, stalemate or draw rules, resignation, or a king loss. Pawns auto-promote to queens for now.
 - **Local test** mode uses a shorter pop-up and pause, with no clocks.
 
+## Sound
+
+All sound effects are synthesised in the browser (`js/sound.js`, Web Audio), so there are no audio files to host: piece moves and
+captures, the CAPTURE alert, card deals and flips, chips landing (one click per chip), the dealer button, check knocks, fold swish and a
+win / lose / split sting. The speaker button in the corner of every screen mutes everything and remembers your choice.
+Browsers only allow audio after a tap, so the first sound starts once you have clicked something.
+
 ## Art
 
 Everything visual has a named slot with a placeholder. See `assets/README.md` for filenames and sizes.

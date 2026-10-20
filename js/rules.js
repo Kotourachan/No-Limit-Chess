@@ -27,7 +27,7 @@ export const RULES = {
   timing: {
     captureMs: 2500,      // arrow + "CAPTURE" on the board, then the pop-up
     introMs: 12300,       // the "Capture!" pop-up with both stacks
-    dealMs: 2800,         // cards dealt and blinds posted at the start of every hand
+    dealMs: 3400,         // cards dealt and blinds posted at the start of every hand
     bufferMs: 2000,       // pause after every decision so the move and the chips can be seen
     actionMs: 20000,      // clock for each decision
     overtimeMs: 30000,    // extra time bank per player, refilled at the start of every exchange

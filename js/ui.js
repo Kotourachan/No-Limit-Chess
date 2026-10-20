@@ -5,6 +5,7 @@
 // between piles, bets, the pot and the winner whenever something changes.
 import { pieceEl, cardEl, emptyCardEl, squareBg } from './skin.js';
 import { RULES } from './rules.js';
+import * as Sound from './sound.js';
 
 const $ = (id) => document.getElementById(id);
 const other = (s) => (s === 'w' ? 'b' : 'w');
@@ -45,6 +46,7 @@ function parseFen(fen) {
 
 // ---------- chips ----------
 const CHIP_COLS = 5;                 // chips per column in a pile
+const DEAL_STEP = 450;   // ms between cards while dealing
 const LEG_MS = 620, STAGGER_MS = 70; // flight time of one hop, delay between chips of one flight
 
 const reducedMotion = () => {
@@ -99,6 +101,7 @@ function flyChips(legs, nChips, { delay = 0 } = {}) {
     frames.forEach((fr, k) => { if (k > 0) kf.push({ offset: fr.t / total - (k === frames.length - 1 ? 0.04 : 0), transform: move(fr.p, k), opacity: 1, easing: 'ease-in-out' }); });
     kf.push({ offset: 1, transform: move(frames[frames.length - 1].p, 1), opacity: 0 });
     const d = delay + i * STAGGER_MS;
+    Sound.play('chip', d + total - 40);
     const anim = c.animate(kf, { duration: total, delay: d, fill: 'both' });
     const done = () => c.remove();
     anim.onfinish = done;
@@ -112,6 +115,7 @@ export function createUI(cb) {
   let lastMeta = {};
   let toastTimer = null;
   let seenExchange;                  // last exchange number announced (undefined until the first update)
+  let lastPieces = null;
   let lastPly;                       // last chess ply drawn, to animate only new moves
   const blankPrev = () => ({ id: null, acts: { w: '', b: '' }, bets: { w: 0, b: 0 }, stacks: null, pot: 0, street: 'preflop', doneShown: null });
   let prev = blankPrev();            // what the table showed last time, so only changes animate
@@ -137,6 +141,10 @@ export function createUI(cb) {
   $('btn-leave2').onclick = () => cb.onLeave();
   $('btn-leave-t').onclick = () => cb.onLeave();
   const resign = () => { if (confirm('Resign this game?')) cb.onAction({ type: 'resign' }); };
+  const sndBtns = [...document.querySelectorAll('.sndbtn')];
+  const paintSnd = () => sndBtns.forEach((b) => { b.textContent = Sound.isMuted() ? '🔇' : '🔊'; b.title = Sound.isMuted() ? 'Sound off (tap to turn on)' : 'Sound on (tap to mute)'; });
+  sndBtns.forEach((b) => { b.onclick = () => { Sound.setMuted(!Sound.isMuted()); paintSnd(); }; });
+  paintSnd();
   $('btn-resign').onclick = resign;
   $('btn-resign-t').onclick = resign;
   $('btn-rematch').onclick = () => cb.onRematch();
@@ -183,6 +191,9 @@ export function createUI(cb) {
 
     // animate only a move we have not drawn yet
     const fresh = lastPly !== undefined && v.ply !== lastPly && v.lastMove;
+    const nPieces = Object.keys(pieces).length;
+    if (fresh) Sound.play(lastPieces != null && nPieces < lastPieces ? 'capture' : 'move');
+    lastPieces = nPieces;
     const col = (sq) => (orientation === 'b' ? 7 - files.indexOf(sq[0]) : files.indexOf(sq[0]));
     const row = (sq) => (orientation === 'b' ? Number(sq[1]) - 1 : 8 - Number(sq[1]));
 
@@ -223,6 +234,7 @@ export function createUI(cb) {
     }
     if (v.pending && Date.now() < arrowUntil) {
       const fresh0 = arrowFor !== v.exchangeNo;
+      if (fresh0) Sound.play('alert');
       arrowFor = v.exchangeNo;
       const x1 = col(v.pending.from) + 0.5, y1 = row(v.pending.from) + 0.5;
       const x2 = col(v.pending.to) + 0.5, y2 = row(v.pending.to) + 0.5;
@@ -443,7 +455,7 @@ export function createUI(cb) {
     for (const s of SEATS) {
       const delta = target[s] - pv.bets[s];
       if (delta <= 0) continue;
-      const d0 = newHand ? 900 + (s === sbSeat ? 0 : 250) : 0;   // blinds go in after the cards are dealt
+      const d0 = newHand ? 4 * DEAL_STEP + 350 + (s === sbSeat ? 0 : 250) : 0;   // blinds go in after the cards are dealt
       plan.push({ legs: ['pile:' + s, 'spot:' + s], n: cnt(delta), delay: d0 });
       arriveSpot[s] = d0 + LEG_MS;
       lastLand = Math.max(lastLand, d0 + LEG_MS);
@@ -467,6 +479,7 @@ export function createUI(cb) {
 
     // ----- seats
     const pileEls = {}, spotEls = {};
+    const dealQueue = [];   // cards that fly in from the dealer chip, one at a time
     const nextActs = { w: JSON.stringify(hd.acts.w), b: JSON.stringify(hd.acts.b) };
     function seatEl(seat, isMe) {
       const role = seat === sbSeat ? 'SB' : 'BB';
@@ -474,6 +487,8 @@ export function createUI(cb) {
       const a = hd.acts[seat];
       const stale = a && a.street !== hd.street;
       const fresh = a && nextActs[seat] !== pv.acts[seat];
+      if (fresh && a.kind === 'check') Sound.play('check');
+      else if (fresh && a.kind === 'fold') Sound.play('fold');
       const justActed = !!a && (held || hd.done) && hd.lastActor === seat;
       let actLabel;
       if (justActed) actLabel = actText(a, f);   // the move that was just made stays on their card
@@ -494,8 +509,8 @@ export function createUI(cb) {
       const reveal = justDone && cards && !isMe && !local;   // the opponent's cards turning over
       for (let i = 0; i < 2; i++) {
         const el = cards ? cardEl(cards[i]) : cardEl(null, { faceDown: true });
-        if (newHand) { el.classList.add('deal'); el.style.animationDelay = (i * 2 + (isMe ? 1 : 0)) * 0.18 + 's'; }
-        else if (reveal) { el.classList.add('flip'); el.style.animationDelay = i * 0.12 + 's'; }
+        if (newHand) { const k = i * 2 + (seat === sbSeat ? 1 : 0); dealQueue.push({ el, delay: 250 + k * DEAL_STEP }); }
+        else if (reveal) { el.classList.add('flip'); el.style.animationDelay = i * 0.12 + 's'; Sound.play('flip', i * 120 + 100); }
         wrap.append(el);
       }
       const nowStack = hd.stacks[seat];
@@ -533,6 +548,7 @@ export function createUI(cb) {
       h('span', { class: 'tag blind' }, `Small blind ${f(hd.sb)} BB · ${nm(sbSeat)}`),
       h('span', { class: 'tag blind' }, `Big blind ${f(hd.bb)} BB · ${nm(bbSeat)}`),
     );
+    if (newHand) Sound.play('dealer', 80);
     $('t-dealer').replaceChildren(h('div', { class: 'dealerchip ' + (sbSeat === opp ? 'top' : 'bottom') + (newHand ? ' slide' : '') },
       h('span', { class: 'd' }, 'D'), h('small', {}, `dealer · ${nm(sbSeat)}`)));
 
@@ -542,7 +558,7 @@ export function createUI(cb) {
       if (hd.board[i] != null) {
         const c = cardEl(hd.board[i]);
         const fresh = newHand ? false : i >= (pv.boardN || 0);
-        if (fresh) { c.classList.add('deal'); c.style.animationDelay = (sweeping ? potLand * 0.6 : 0) / 1000 + (i - (pv.boardN || 0)) * 0.15 + 's'; }
+        if (fresh) dealQueue.push({ el: c, delay: (sweeping ? potLand * 0.6 : 0) + (i - (pv.boardN || 0)) * DEAL_STEP });
         bd.append(c);
       } else bd.append(emptyCardEl());
     }
@@ -569,6 +585,7 @@ export function createUI(cb) {
         : 'Next hand coming up…';
       rb.replaceChildren(h('div', { class: 'l1' }, l1), h('div', { class: 'l2' }, l2));
       rb.style.setProperty('--rd', (justDone ? potLand : 0) + 'ms');
+      if (justDone) Sound.play(r.winner === 'tie' ? 'tie' : local || r.winner === me ? 'win' : 'lose', potLand + 250);
       rb.hidden = false;
     } else rb.hidden = true;
 
@@ -584,6 +601,18 @@ export function createUI(cb) {
     clock = (!hd.done && hd.toAct && v.actionMs > 0) ? { end: Date.now() + v.actionMs, total: v.actionTotal || 20000, mode: v.clockMode } : null;
 
     // ----- chips in flight (the elements exist now, so their positions can be measured)
+    const deck = document.querySelector('#t-dealer .dealerchip .d');
+    const dr = deck ? deck.getBoundingClientRect() : null;
+    for (const { el, delay } of dealQueue) {
+      const r = el.getBoundingClientRect();
+      if (dr) {
+        el.style.setProperty('--fx', (dr.left + dr.width / 2 - (r.left + r.width / 2)) + 'px');
+        el.style.setProperty('--fy', (dr.top + dr.height / 2 - (r.top + r.height / 2)) + 'px');
+      }
+      el.classList.add('deal');
+      el.style.animationDelay = delay + 'ms';
+      Sound.play('deal', delay + 60);
+    }
     const els = { pot: potPile };
     for (const s of SEATS) { els['pile:' + s] = pileEls[s]; els['spot:' + s] = spotEls[s]; }
     for (const fl of plan) flyChips(fl.legs.map((k) => els[k]), fl.n, { delay: fl.delay });

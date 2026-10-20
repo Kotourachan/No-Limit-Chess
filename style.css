@@ -170,10 +170,11 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 button.callbtn { background: var(--panel2); font-weight: 600; }
 #t-log { max-height: 130px; }
 @keyframes dealIn {
-  from { opacity: 0; transform: translateY(-90px) rotate(-14deg) scale(0.55); }
-  to { opacity: 1; transform: none; }
+  0% { opacity: 0; transform: translate(var(--fx, 0px), var(--fy, -90px)) rotate(-24deg) scale(0.45); }
+  15% { opacity: 1; }
+  100% { opacity: 1; transform: none; }
 }
-.card.deal { animation: dealIn 0.45s cubic-bezier(0.2, 0.8, 0.3, 1) both; }
+.card.deal { animation: dealIn 0.5s cubic-bezier(0.25, 0.8, 0.35, 1) both; }
 @media (prefers-reduced-motion: reduce) { .card.deal { animation: none; } }
 
 /* ---------- oval table, capture pop-up and animations ---------- */
@@ -348,3 +349,7 @@ button:disabled { cursor: not-allowed; filter: grayscale(0.6); }
   #t-log { max-height: 90px; }
   .topbar { padding: 6px 12px; }
 }
+
+.sndcorner { position: absolute; top: 10px; right: 12px; }
+.sndbtn { min-width: 2.4em; }
+#lobby { position: relative; }
