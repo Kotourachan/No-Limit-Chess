@@ -28,33 +28,23 @@ technical host could still peek. Fine for friends, not for anything competitive.
 
 All numbers are in `js/rules.js`.
 
-- Normal chess. A capture starts its own heads-up poker mini-match. No chips carry between exchanges.
-- **Stacks:** each side starts with 3 BB plus the value of their piece in the exchange. The capturer's piece is theirs, the defender's is the
-  piece just captured. Bishop (3) takes pawn (1): capturer 6 BB, defender 4 BB. Bishop takes queen (9): 6 BB vs 12 BB. Pawn takes pawn: 4 BB each. There is no extra bonus for the difference in value. Values: pawn 1, knight 3, bishop 3, rook 5, queen 9.
-- **Blinds:** 0.5 / 1 BB (BB = 10 chips in the code). The capturer (initiator) keeps the button for every hand of the exchange.
-  The button player posts the small blind and acts first preflop and last after the flop.
-- **Hands repeat until one player is out of chips.** If the capturer wins the mini-match the capture stands. If they lose, the capturing
-  piece is lost (the defender stays where it was) and the move is spent. One edge case: a pinned piece that takes its pinner and then loses
-  leaves its own king exposed, and that loses the game on the spot.
-- **Recapture:** capturing on the square your opponent just captured on is just another exchange, with the recapturer as the capturer
-  (so the recapturer gets the button).
-- **Showdown:** the capturer must show if called; the defender can muck a losing hand. If someone folds, nobody shows.
-- **Clock:** every poker decision has 10 seconds (the first one of an exchange gets a few extra seconds for the pop-up and the deal).
-  Run out of time and you check if that is free, otherwise you fold. There is no clock in Local test.
-- **King:** captures by the king are automatic. They skip the poker and just happen. A capture made while you're in check is also forced
-  and skips the hand.
-- Game ends on checkmate, stalemate or draw rules, or resignation. Pawns auto-promote to queens for now.
-
-## What you see
-
-- **Capture pop-up:** when someone takes a piece, a short pop-up shows both starting stacks (3 BB base plus the piece value), then the
-  board gives way to the poker table.
-- **Poker table:** an oval table with the two players on opposite sides, everything in big blinds. Each seat shows the dealer button,
-  its blind (SB 0.5 or BB 1), the player's last action, their stack right next to their cards, and their current bet. The blinds are
-  also written on the table between the players. The player to act has a highlighted seat and a countdown bar.
-- Finished hands stay on the table for a few seconds (showdown cards turn over, result banner) before the next hand or the board.
-- Animations: cards are dealt in, actions pop in, the pot bumps when it changes, chess pieces slide, and a lost attacker vanishes.
-  They switch off if the system asks for reduced motion.
+- **Every capture is its own mini-match.** No global stack. Stacks are set when the capture is declared (BB = 10 chips):
+  **3 BB base + the piece's value** for each side, the **initiator (capturer) gets +2 BB** and the **defender gets -2 BB**.
+  Values: pawn 1, knight 3, bishop 3, rook 5, queen 9. No bonus for value differences.
+  Example: pawn takes pawn is 6 BB vs 2 BB; bishop takes pawn is 8 BB vs 2 BB.
+- Hands repeat (heads-up hold'em, blinds 0.5 / 1 BB) until one side is out of chips. The capturer is the dealer for the whole exchange
+  (small blind, acts first preflop, last after).
+- Capturer wins or splits the mini-match: the capture stands. Capturer loses: the **capturing piece is lost**, the defender stays put and the
+  turn passes. A pinned piece that loses exposes its king and loses the game.
+- King captures and captures made while in check are automatic (no hand).
+- The capturer must show at showdown. The defender may muck a losing hand.
+- **Pop-up and table:** a capture first shows a ~12 s pop-up with both stacks, then a separate oval table (the board is hidden).
+  The dealer chip sits by the dealer. Blinds come out of the stacks, bets slide to the felt, and the pot sweeps to the winner.
+  Chips are drawn one chip per BB.
+- **Clocks:** 20 s per decision, then a **30 s overtime bank per player per exchange** (refills for every new exchange, not shared).
+  Running out means check if free, otherwise fold. After every decision there is a 2 s pause where the move is highlighted on the player's card.
+- Game ends on checkmate, stalemate or draw rules, resignation, or a king loss. Pawns auto-promote to queens for now.
+- **Local test** mode uses a shorter pop-up and pause, with no clocks.
 
 ## Art
 

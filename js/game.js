@@ -10,9 +10,14 @@
 // Options (all optional):
 //   manualAdvance  keep a finished hand on the table for pauseMs before the next hand / the
 //                  board comes back (the host calls tick() regularly). Off: instant.
-//   actionMs       per-decision clock in ms (0 = no clock). A player who runs out of time
-//                  checks if that is free, otherwise folds.
-//   graceMs        extra time on the first decision of a hand, for the deal animation.
+//   actionMs       per-decision clock in ms (0 = no clock).
+//   overtimeMs     extra time bank per player, refilled at the start of every exchange. It is
+//                  used once the decision clock runs out. Out of both: the player checks if
+//                  that is free, otherwise folds.
+//   introMs        the capture pop-up. Nobody can act during it (first hand of an exchange).
+//   dealMs         deal animation and blinds at the start of every hand. Nobody can act.
+//   bufferMs       pause after every decision so the move and the chips can be seen. The
+//                  next player's clock starts when it ends.
 
 import { Chess } from '../vendor/chess.js';
 import { RULES, exchangeStacks } from './rules.js';
@@ -29,8 +34,11 @@ export class Game {
     this.rng = opts.rng;
     this.manual = !!opts.manualAdvance;
     this.actionMs = opts.actionMs || 0;
+    this.overtimeMs = opts.overtimeMs || 0;
     this.pauseMs = opts.pauseMs == null ? 3200 : opts.pauseMs;
-    this.graceMs = opts.graceMs == null ? 1500 : opts.graceMs;
+    this.introMs = opts.introMs || 0;
+    this.dealMs = opts.dealMs || 0;
+    this.bufferMs = opts.bufferMs || 0;
     this.now = opts.now || (() => Date.now());
     this.chess = new Chess();
     this.phase = 'chess'; // 'chess' | 'poker' | 'over'
@@ -45,6 +53,11 @@ export class Game {
     this.result = null;
     this.log = [];
     this.deadline = null;   // when the player to act runs out of time
+    this.holdUntil = null;  // nobody may act before this (animations)
+    this.clockMode = 'main'; // 'main' decision clock or 'ot' overtime
+    this.otStart = null;
+    this.otTotal = 0;
+    this.ot = { w: this.overtimeMs, b: this.overtimeMs }; // overtime banks of the current exchange
     this.advanceAt = null;  // when a finished hand moves on (manualAdvance only)
     this.exchangeNo = 0;
     this.handSeq = 0;
@@ -110,6 +123,7 @@ export class Game {
     const st = exchangeStacks(m.piece, m.captured, R);
     const stacks = { [seat]: st.attacker, [other(seat)]: st.defender };
     this.exchangeNo++;
+    this.ot = { w: this.overtimeMs, b: this.overtimeMs };
     this.pending = {
       from: m.from, to: m.to, promotion: m.promotion, san: m.san, color: seat,
       piece: m.piece, captured: m.captured, isRecapture, startStacks: { ...stacks },
@@ -128,23 +142,36 @@ export class Game {
     this.hand.id = ++this.handSeq;
     this.hand.log.forEach((l) => this.say(l));
     // A short stack can be all-in from the blinds alone, which finishes the hand immediately.
-    if (this.hand.done) this._afterHand();
-    else this._armTimer(true);
+    if (this.hand.done) { this.holdUntil = null; this._afterHand(); return; }
+    this._hold(this.dealMs + (mt.handNo === 1 ? this.introMs : 0));
+    this._armTimer();
   }
 
-  _armTimer(first) {
+  _hold(ms) { this.holdUntil = ms > 0 ? this.now() + ms : null; }
+
+  holdRemaining() { return this.holdUntil ? Math.max(0, this.holdUntil - this.now()) : 0; }
+
+  // The decision clock for whoever is to act starts when the current hold ends.
+  _armTimer() {
+    this.clockMode = 'main';
+    this.otStart = null;
     if (!this.actionMs || !this.hand || this.hand.done || this.phase !== 'poker') { this.deadline = null; return; }
-    this.deadline = this.now() + this.actionMs + (first ? this.graceMs : 0);
+    const t = this.now();
+    this.deadline = Math.max(t, this.holdUntil || 0) + this.actionMs;
   }
 
-  _poker(seat, a) {
+  _poker(seat, a, { force = false } = {}) {
     if (this.phase !== 'poker' || !this.hand) return { ok: false, error: 'No hand in progress' };
+    if (!force && this.holdUntil && this.now() < this.holdUntil) return { ok: false, error: 'Hold on, the table is still showing the last move' };
+    const t = this.now();
     const logStart = this.hand.log.length;
     const r = P.act(this.hand, seat, a);
     if (!r.ok) return r;
+    // time spent in overtime comes out of that player's bank
+    if (this.clockMode === 'ot' && this.otStart != null) this.ot[seat] = Math.max(0, this.ot[seat] - Math.max(0, t - this.otStart));
     for (const l of this.hand.log.slice(logStart)) this.say(l);
     if (this.hand.done) this._afterHand();
-    else this._armTimer(false);
+    else { this._hold(this.bufferMs); this._armTimer(); }
     return { ok: true };
   }
 
@@ -159,6 +186,7 @@ export class Game {
       initiator: h.initiator, button: h.button, text: h.log[h.log.length - 1],
     };
     this.deadline = null;
+    this.holdUntil = null;
     if (this.manual) {
       const out = this._busted();
       h.matchOver = !!out;
@@ -214,18 +242,32 @@ export class Game {
   tick() {
     if (this.phase === 'over') return false;
     const t = this.now();
-    if (this.advanceAt && t >= this.advanceAt) return this.advance().ok;
-    if (this.deadline && t >= this.deadline) return this.timeout().ok;
-    return false;
+    let changed = false;
+    if (this.holdUntil && t >= this.holdUntil) { this.holdUntil = null; changed = true; }
+    if (this.advanceAt && t >= this.advanceAt) return this.advance().ok || changed;
+    if (this.deadline && t >= this.deadline && this.hand && !this.hand.done) {
+      const seat = this.hand.toAct;
+      if (this.clockMode === 'main' && this.ot[seat] > 0) {
+        this.clockMode = 'ot';
+        this.otStart = this.deadline;
+        this.otTotal = this.ot[seat];
+        this.deadline = this.otStart + this.otTotal;
+        this.say(`${NAME[seat]} is in overtime (${Math.round(this.otTotal / 1000)}s bank)`);
+        return true;
+      }
+      return this.timeout().ok || changed;
+    }
+    return changed;
   }
 
-  // The player to act ran out of time: check if free, otherwise fold.
+  // The player to act ran out of time (and overtime): check if free, otherwise fold.
   timeout() {
     if (this.phase !== 'poker' || !this.hand || this.hand.done) return { ok: false, error: 'No decision pending' };
     const seat = this.hand.toAct;
     const o = P.options(this.hand, seat);
     this.say(`${NAME[seat]} ran out of time`);
-    return this._poker(seat, { kind: o.canCheck ? 'check' : 'fold' });
+    this.ot[seat] = 0;
+    return this._poker(seat, { kind: o.canCheck ? 'check' : 'fold' }, { force: true });
   }
 
   _commit(seat, m) {
@@ -274,6 +316,13 @@ export class Game {
   }
 
   // ---- views ----
+  _overtimeView() {
+    const ot = { w: this.ot.w, b: this.ot.b };
+    const seat = this.hand && !this.hand.done ? this.hand.toAct : null;
+    if (this.clockMode === 'ot' && seat && this.deadline) ot[seat] = Math.max(0, this.deadline - this.now());
+    return ot;
+  }
+
   legalMoves() {
     return this.chess.moves({ verbose: true }).map((m) => ({ from: m.from, to: m.to, capture: !!m.captured, promotion: m.promotion || null }));
   }
@@ -294,6 +343,9 @@ export class Game {
         hole: { w: rev('w') ? [...h.hole.w] : null, b: rev('b') ? [...h.hole.b] : null },
         options: h.toAct && !done ? P.options(h, h.toAct) : null,
         acts: { w: h.acts.w, b: h.acts.b },
+        lastActor: h.lastActor,
+        sweep: h.sweep ? { from: h.sweep.from, bets: { ...h.sweep.bets } } : null,
+        endBets: done && h.endBets ? { ...h.endBets } : null,
         done,
         result: done ? { winner: h.result.winner, reason: h.result.reason, pot: h.result.pot, names: h.result.names } : null,
         matchOver: !!h.matchOver, matchWinner: h.matchWinner || null, matchStands: !!h.matchStands,
@@ -325,7 +377,12 @@ export class Game {
       ply: this.ply,
       result: this.result,
       actionMs: this.deadline ? Math.max(0, this.deadline - this.now()) : 0,
-      actionTotal: this.actionMs,
+      actionTotal: this.clockMode === 'ot' ? this.otTotal : this.actionMs,
+      clockMode: this.clockMode,
+      overtime: this._overtimeView(),
+      overtimeTotal: this.overtimeMs,
+      holdMs: this.holdRemaining(),
+      introMs: this.introMs,
       log: this.log.slice(-40),
       bb: this.rules.bb,
     };

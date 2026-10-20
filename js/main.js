@@ -3,6 +3,7 @@ import { hostRoom, joinRoom, normalizeCode } from './net.js';
 import { createUI } from './ui.js';
 import { loadSkin } from './skin.js';
 import { chooseMove, choosePokerAction } from './ai.js';
+import { RULES } from './rules.js';
 
 let mode = null; // 'host' | 'guest' | 'local' | 'ai'
 let aiColor = 'b';
@@ -29,11 +30,20 @@ const ui = createUI({
 
 function other(s) { return s === 'w' ? 'b' : 'w'; }
 
-// Finished hands stay on the table for a few seconds, every poker decision has a 10 second
-// clock (none in the local test), and the first decision of an exchange gets extra time for
-// the capture pop-up and the deal animation.
+// Timing lives in rules.js. The local test (you play both sides) has no clocks, a shorter
+// capture pop-up and a shorter pause after each decision.
 function makeGame() {
-  return new Game({ manualAdvance: true, actionMs: mode === 'local' ? 0 : 10000, graceMs: 3600, pauseMs: 3400 });
+  const T = RULES.timing;
+  const local = mode === 'local';
+  return new Game({
+    manualAdvance: true,
+    actionMs: local ? 0 : T.actionMs,
+    overtimeMs: local ? 0 : T.overtimeMs,
+    introMs: local ? 4000 : T.introMs,
+    dealMs: T.dealMs,
+    bufferMs: local ? 800 : T.bufferMs,
+    pauseMs: T.pauseMs,
+  });
 }
 
 // ---------- hosting ----------
@@ -154,11 +164,12 @@ function scheduleAi() {
   const thinking = aiToAct();
   ui.thinking(thinking);
   if (!thinking) return;
-  const hd = game.hand;
-  const fresh = hd && !hd.acts.w && !hd.acts.b; // first decision of a hand: let the cards land first
-  const delay = game.phase === 'poker' ? (fresh ? 3800 : 900 + Math.random() * 700) : 350;
+  // wait out the pop-up / deal / the move just made, then think for a moment
+  const wait = game.phase === 'poker' ? game.holdRemaining() : 0;
+  const think = game.phase === 'poker' ? 800 + Math.random() * 700 : 350;
   aiTimer = setTimeout(() => {
     if (mode !== 'ai' || !aiToAct()) return;
+    if (game.phase === 'poker' && game.holdRemaining() > 0) { scheduleAi(); return; }
     if (game.phase === 'poker') {
       const a = choosePokerAction(game, aiColor, aiLevel);
       game.apply(aiColor, { type: 'poker', ...a });
@@ -168,7 +179,7 @@ function scheduleAi() {
     }
     renderAi();
     scheduleAi();
-  }, delay);
+  }, wait + think);
 }
 
 // ---------- actions ----------

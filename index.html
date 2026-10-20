@@ -40,10 +40,11 @@
     <summary>How it works</summary>
     <ul>
       <li>Normal chess until someone captures (the king just captures normally, no hand). A capture starts a heads-up poker mini-match.</li>
-      <li>Each side starts the mini-match with 3 BB plus their piece's value: a bishop (3) taking a pawn (1) is 6 BB against 4 BB, and a bishop taking a queen (9) is 6 BB against 12 BB. Values: pawn 1, knight 3, bishop 3, rook 5, queen 9.</li>
-      <li>Blinds are 0.5 / 1 BB. The capturer keeps the button for the whole exchange. Hands are played until one player is out of chips.</li>
+      <li>Each side starts the mini-match with 3 BB plus their piece's value, and the player who captures gets +2 BB for initiating. The defender gets -2 BB. A bishop (3) taking a pawn (1) is 8 BB against 2 BB. Values: pawn 1, knight 3, bishop 3, rook 5, queen 9. On the table one chip is one BB.</li>
+      <li>Blinds are 0.5 / 1 BB. The capturer is the dealer for the whole exchange. Hands are played until one player is out of chips.</li>
       <li>Win the mini-match and the capture stands. Lose it and your capturing piece is lost (the defender stays put) and your move is spent. Recapturing on the same square works the same way, with the recapturer as the capturer.</li>
-      <li>The capturer must show their cards if called. The other player can muck a losing hand. Every decision has a 10 second clock: run out and you check if it's free, otherwise you fold.</li>
+      <li>The capturer must show their cards if called. The other player can muck a losing hand.</li>
+      <li>Every decision has a 20 second clock. When it runs out you use your 30 second overtime bank (a fresh one every exchange). With both used up you check if it's free, otherwise you fold. After every decision the table pauses for 2 seconds so you can see the move and the chips.</li>
       <li>No chips carry between captures. Checkmate (or the usual draws) ends the game. A capture made while in check is forced and skips the hand.</li>
     </ul>
   </details>
@@ -129,10 +130,13 @@
     <div class="oval-area">
       <div id="seat-opp" class="seatslot top"></div>
       <div class="oval">
+        <div id="spot-opp" class="betspot"></div>
         <div id="t-blinds" class="blinds"></div>
         <div id="t-board" class="cards board-cards"></div>
-        <div id="t-pot" class="potline"></div>
+        <div class="potrow"><div id="t-potpile" class="potpilebox"></div><div id="t-pot" class="potline"></div></div>
         <div id="t-result" class="resultbanner" hidden></div>
+        <div id="spot-me" class="betspot"></div>
+        <div id="t-dealer"></div>
       </div>
       <div id="seat-me" class="seatslot bottom"></div>
     </div>
@@ -142,6 +146,8 @@
 </section>
 
 <div id="intro" class="overlay intro" hidden><div id="intro-box" class="introbox"></div></div>
+
+<div id="fx" class="fx" aria-hidden="true"></div>
 
 <div id="toast" class="toast" hidden></div>
 

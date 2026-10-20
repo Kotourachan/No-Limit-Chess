@@ -5,7 +5,7 @@
 // Levels: 'easy' (1-ply, noisy) and 'normal' (2-ply, less noisy).
 
 import { Chess } from '../vendor/chess.js';
-import { RULES } from './rules.js';
+import { RULES, exchangeStacks } from './rules.js';
 import * as P from './poker.js';
 
 const other = P.other;
@@ -75,9 +75,8 @@ export function chooseMove(game, seat, level = 'normal', rng = Math.random) {
     let s = -negamax(c, depth - 1, -Infinity, Infinity, 1);
     c.undo();
     if (m.captured && m.piece !== 'k' && !inCheck) {
-      const v = RULES.pieceValues;
-      const a = RULES.baseStackBB + v[m.piece], d = RULES.baseStackBB + v[m.captured];
-      const p = a / (a + d); // chance the capture lands, at equal poker skill
+      const st = exchangeStacks(m.piece, m.captured);
+      const p = st.attacker / (st.attacker + st.defender); // chance the capture lands, at equal poker skill
       s = p * s + (1 - p) * base;
     }
     s += (rng() - 0.5) * 2 * noise;
@@ -122,7 +121,8 @@ export function choosePokerAction(game, seat, level = 'normal', rng = Math.rando
   const effBB = Math.min(myStack, h.stacks[opp] + h.bets[opp]) / h.bb;
 
   const sized = (frac) => {
-    const to = Math.round(h.bets[opp] + (pot + toCall) * frac);
+    // bets are always whole half-blinds, so every chip on the table is a clean 0.5 BB step
+    const to = Math.round((h.bets[opp] + (pot + toCall) * frac) / h.sb) * h.sb;
     return { kind: 'raise', amount: Math.max(o.minRaiseTo, Math.min(o.maxRaiseTo, to)) };
   };
 

@@ -149,8 +149,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .act.now { color: var(--accent); }
 .act.old { opacity: 0.45; }
 .cardrow { display: flex; align-items: center; gap: 14px; margin-top: 8px; }
-.stackbox { display: flex; flex-direction: column; line-height: 1.1; }
-.stackbox .stk { font-size: 1.5rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+.stackbox { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.1; min-width: 0; }
+.stackbox .stk { font-size: 1.05rem; font-weight: 800; font-variant-numeric: tabular-nums; margin-top: 2px; }
 .stackbox .sub { color: var(--muted); font-size: 0.8rem; }
 .betchip { margin-left: auto; background: #101216; color: var(--accent); border-radius: 99px; padding: 4px 12px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .timer { position: relative; height: 10px; background: #101216; border-radius: 99px; margin-top: 10px; overflow: hidden; }
@@ -179,8 +179,8 @@ button.callbtn { background: var(--panel2); font-weight: 600; }
 /* ---------- oval table, capture pop-up and animations ---------- */
 .oval-area { position: relative; padding: 4px 0; }
 .seatslot { position: relative; z-index: 2; width: min(100%, 460px); margin: 0 auto; }
-.oval { position: relative; z-index: 1; margin: -30px 0; padding: 62px 9% 62px; min-height: 270px;
-  border-radius: 50%; border: 10px solid #4a3321; text-align: center;
+.oval { position: relative; z-index: 1; margin: -34px 0; padding: 52px 6% 52px; min-height: 400px;
+  border-radius: 50%; border: 10px solid #4a3321; text-align: center; gap: 6px;
   background: radial-gradient(ellipse at center, #1f6b45 0%, #14482e 72%, #0f3822 100%);
   box-shadow: inset 0 0 28px rgba(0, 0, 0, 0.5), 0 6px 18px rgba(0, 0, 0, 0.4);
   display: flex; flex-direction: column; justify-content: center; align-items: center; }
@@ -191,7 +191,7 @@ button.callbtn { background: var(--panel2); font-weight: 600; }
 .potline .pot, .oval .potline { display: inline-block; }
 .oval .potline { background: rgba(0, 0, 0, 0.45); color: var(--accent); font-weight: 700; padding: 3px 14px; border-radius: 99px; font-variant-numeric: tabular-nums; }
 .oval .resultbanner { margin-top: 8px; }
-@media (max-width: 440px) { .oval .card { width: 36px; height: 50px; } .oval { padding: 58px 5% 58px; } }
+@media (max-width: 440px) { .oval .card { width: 36px; height: 50px; } .oval { padding: 46px 4% 46px; } }
 
 /* capture pop-up */
 .overlay.intro { background: rgba(8, 10, 14, 0.7); z-index: 25; animation: fadeIn 0.2s ease-out; }
@@ -201,11 +201,11 @@ button.callbtn { background: var(--panel2); font-weight: 600; }
 .introbox .versus { display: flex; align-items: stretch; gap: 8px; justify-content: center; }
 .introbox .vs { align-self: center; color: var(--muted); font-weight: 700; }
 .stackcard { flex: 1; background: #101216; border-radius: 12px; padding: 10px 6px; border: 2px solid transparent; }
-.stackcard.cap { border-color: var(--red); }
+.stackcard.attacker { border-color: var(--red); }
 .stackcard .who { font-weight: 700; }
 .stackcard .who .sub { color: var(--muted); font-weight: 400; font-size: 0.8em; }
-.stackcard .big { font-size: 2rem; font-weight: 900; color: var(--accent); font-variant-numeric: tabular-nums; animation: countPop 0.5s 0.25s both; }
-.stackcard .brk { color: var(--muted); font-size: 0.8rem; }
+.stackcard .big { font-size: 1.9rem; font-weight: 900; color: var(--accent); font-variant-numeric: tabular-nums; animation: countPop 0.5s 0.25s both; }
+.stackcard .brk { color: var(--muted); font-size: 0.78rem; list-style: none; margin: 6px 0 0; padding: 0; line-height: 1.35; }
 .stackcard .role { margin-top: 4px; font-size: 0.72rem; color: #9fb0a5; text-transform: uppercase; letter-spacing: 0.05em; }
 .introbox .foot { margin-top: 12px; color: var(--muted); font-size: 0.82rem; }
 
@@ -232,4 +232,67 @@ button.callbtn { background: var(--panel2); font-weight: 600; }
   .seatbox.acting, .act.fresh, .betchip.fresh, .potline.bump, .resultbanner, .card.flip, .card.deal,
   .piece-glyph.slide, .piece-img.slide, .introbox, .overlay.intro, .stackcard .big { animation: none; }
   .piece-glyph.ghost, .piece-img.ghost { display: none; }
+}
+
+/* ---------- chips: one chip is one BB ---------- */
+.chip { display: block; flex: none; width: 22px; height: 22px; border-radius: 50%; box-sizing: border-box;
+  background: radial-gradient(circle at 36% 30%, #f8dd85 0 20%, #e0b04a 21% 60%, #b98a2c 61%);
+  border: 2px dashed rgba(255, 255, 255, 0.85); box-shadow: 0 1px 0 rgba(0, 0, 0, 0.5), 0 2px 3px rgba(0, 0, 0, 0.35); }
+.chip.half { width: 16px; height: 16px;
+  background: radial-gradient(circle at 36% 30%, #fff 0 20%, #d5dbe4 21% 60%, #9aa3b2 61%); }
+.pile { display: flex; align-items: flex-end; gap: 4px; min-height: 26px; }
+.pile .col { display: flex; flex-direction: column-reverse; align-items: center; }
+.pile .col .chip:not(:first-child) { margin-bottom: -16px; }
+.pile.small .chip { width: 18px; height: 18px; }
+.pile.small .chip.half { width: 13px; height: 13px; }
+.pile.small .col .chip:not(:first-child) { margin-bottom: -13px; }
+.pile.small { gap: 3px; min-height: 22px; }
+.pile.empty { min-width: 22px; height: 22px; border-radius: 50%; border: 2px dashed rgba(255, 255, 255, 0.22); box-sizing: border-box; }
+.chip.arriving, .spotbox .lbl.late { animation: chipIn 0.2s ease-out both; }
+.chip.fly { position: fixed; z-index: 24; pointer-events: none; opacity: 0; margin: 0 !important; }
+.fx { position: fixed; inset: 0; pointer-events: none; z-index: 24; overflow: hidden; }
+.leaving { animation: chipsOut 0.16s linear forwards; animation-delay: var(--ld, 0ms); }
+.potpilebox .collect { animation: chipsOut 0.2s linear forwards; animation-delay: var(--cd, 0ms); }
+@keyframes chipIn { from { opacity: 0; transform: scale(0.5); } to { opacity: 1; transform: none; } }
+@keyframes chipsOut { from { opacity: 1; } to { opacity: 0; } }
+
+/* bets, pot and dealer chip on the felt */
+.betspot { min-height: 48px; display: flex; align-items: center; justify-content: center; }
+.spotbox { display: flex; align-items: center; gap: 8px; min-width: 120px; min-height: 40px; padding: 3px 10px; justify-content: center;
+  border: 2px dashed rgba(255, 255, 255, 0.18); border-radius: 14px; }
+.spotbox .lbl { font-size: 0.75rem; color: #f2e7c0; font-weight: 600; white-space: nowrap; min-width: 3.6em; text-align: left; }
+.potrow { display: flex; align-items: center; justify-content: center; gap: 10px; }
+.potpilebox { display: flex; align-items: center; }
+.dealerchip { position: absolute; left: 7%; display: flex; flex-direction: column; align-items: center; z-index: 3; }
+.dealerchip.top { top: 20%; }
+.dealerchip.bottom { bottom: 20%; }
+.dealerchip .d { width: 34px; height: 34px; border-radius: 50%; background: #fff; color: #111; font-weight: 900; font-size: 1.1rem;
+  display: flex; align-items: center; justify-content: center; border: 3px double #8a8f99; box-shadow: 0 2px 5px rgba(0, 0, 0, 0.5); }
+.dealerchip small { margin-top: 2px; font-size: 0.62rem; color: #dfe9e1; text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; text-shadow: 0 1px 2px #000; }
+.dealerchip.slide .d { animation: dealerIn 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+@keyframes dealerIn { from { opacity: 0; transform: translateY(-40px) rotate(-200deg) scale(0.4); } to { opacity: 1; transform: none; } }
+
+/* the last decision stays highlighted on the player's card while the table pauses */
+.seatbox.justacted { --hl: var(--accent); border-color: var(--hl); box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.07), 0 0 20px var(--hl); animation: none; }
+.seatbox.k-fold { --hl: #d65a5a; } .seatbox.k-check { --hl: #5aa0e0; } .seatbox.k-call { --hl: #4fb877; }
+.seatbox.k-bet, .seatbox.k-raise { --hl: #e0b04a; }
+.act.hl { background: var(--hl, var(--accent)); color: #101216; padding: 2px 11px; border-radius: 99px; font-weight: 800; opacity: 1; }
+.tag.ot { background: #2c2740; color: #cbbdff; }
+.tag.ot.on { background: #8a3a22; color: #fff; }
+.tag.ot.none { opacity: 0.45; }
+.timer.ot .fill { background: #e06a3a; }
+.timer .sec { right: 10px; }
+.ctl.held { opacity: 0.55; }
+.ctl.held .turnmsg { color: var(--muted); }
+.resultbanner { animation: slideUp 0.35s ease-out both; animation-delay: var(--rd, 0ms); }
+button:disabled { cursor: not-allowed; filter: grayscale(0.6); }
+
+/* capture pop-up */
+.introbar { height: 6px; background: #101216; border-radius: 99px; overflow: hidden; margin: 12px 0 4px; }
+.introbar .fill { height: 100%; width: 100%; background: var(--accent); transform-origin: left; animation: introBar linear forwards; }
+@keyframes introBar { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+.stackcard .pile { justify-content: center; margin: 6px auto 0; }
+@media (prefers-reduced-motion: reduce) {
+  .chip.arriving, .spotbox .lbl.late, .dealerchip.slide .d, .resultbanner, .introbar .fill { animation: none; }
+  .leaving, .potpilebox .collect { animation: none; }
 }

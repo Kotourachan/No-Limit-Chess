@@ -82,28 +82,28 @@ test('chess: non-capture moves never trigger poker; capture does', () => {
   assert.ok(g.apply('w', { type: 'move', from: 'e4', to: 'd5' }).ok);
   assert.equal(g.phase, 'poker');
   assert.equal(g.pending.isRecapture, false);
-  assert.deepEqual(g.match.stacks, { w: 40, b: 40 }); // pawn vs pawn: (3+1) BB each, BB = 10 chips
+  assert.deepEqual(g.match.stacks, { w: 60, b: 20 }); // pawn vs pawn: capturer 3+1+2 BB, defender 3+1-2 BB (BB = 10 chips)
   assert.equal(g.match.button, 'w'); // the capturer has the button
   assert.ok(!g.apply('w', { type: 'move', from: 'a2', to: 'a3' }).ok);
 });
 
-test('exchange stacks are (3 + piece value) BB: bishop takes pawn = 6 BB vs 4 BB', () => {
+test('exchange stacks: 3 + piece value, plus 2 BB for the initiator: bishop takes pawn = 8 BB vs 2 BB', () => {
   const g = new Game({ rng: mulberry(9) });
   g.chess.load('4k3/5p2/8/8/2B5/8/8/4K3 w - - 0 1');
   assert.ok(g.apply('w', { type: 'move', from: 'c4', to: 'f7' }).ok);
   assert.equal(g.phase, 'poker');
-  assert.deepEqual(g.match.stacks, { w: 60, b: 40 });
+  assert.deepEqual(g.match.stacks, { w: 80, b: 20 });
   assert.equal(g.hand.toAct, 'w'); // button/SB acts first preflop
   assert.equal(g.hand.sb, 5);
   assert.equal(g.hand.bb, 10); // 0.5 BB / 1 BB
 });
 
-test('no value-difference bonus: bishop takes queen = 6 BB vs 12 BB', () => {
+test('no value-difference bonus: bishop takes queen = 8 BB vs 10 BB', () => {
   const g = new Game({ rng: mulberry(9) });
   g.chess.load('4k3/5q2/8/8/2B5/8/8/4K3 w - - 0 1');
   assert.ok(g.apply('w', { type: 'move', from: 'c4', to: 'f7' }).ok);
   assert.equal(g.phase, 'poker');
-  assert.deepEqual(g.match.stacks, { w: 60, b: 120 });
+  assert.deepEqual(g.match.stacks, { w: 80, b: 100 });
   assert.equal(g.match.button, 'w'); // the capturer keeps the button even as the short stack
 });
 
@@ -150,7 +150,7 @@ test('recapture: recapturer is the capturer in the new match and has the button'
     assert.equal(g.pending.isRecapture, true);
     assert.equal(g.match.button, 'b');
     assert.equal(g.match.capturer, 'b');
-    assert.deepEqual(g.match.stacks, { b: 120, w: 40 }); // queen (3+9) BB vs pawn (3+1) BB
+    assert.deepEqual(g.match.stacks, { b: 140, w: 20 }); // queen 3+9+2 BB vs pawn 3+1-2 BB
     return;
   }
   assert.fail('no seed produced a standing first capture');
@@ -242,7 +242,7 @@ test('a failed capture loses the capturing piece and passes the turn', () => {
   const g = new Game({ rng: mulberry(4) });
   g.chess.load('4k3/p7/8/3n4/8/8/8/3QK3 w - - 0 1'); // Qxd5 (the pawn avoids a bare-king draw)
   g.apply('w', { type: 'move', from: 'd1', to: 'd5' });
-  assert.deepEqual(g.match.stacks, { w: 120, b: 60 });
+  assert.deepEqual(g.match.stacks, { w: 140, b: 40 });
   foldAlways(g, 'w');
   assert.equal(g.phase, 'chess');
   assert.equal(g.chess.get('d1'), undefined);            // queen gone from its square
@@ -261,12 +261,16 @@ test('a pinned piece that fails its capture exposes its king and loses the game'
   assert.deepEqual(g.result, { winner: 'b', reason: 'king exposed' });
 });
 
-test('manual advance: finished hand stays on the table until tick() after the pause', () => {
-  let t = 1000;
-  const g = new Game({ rng: mulberry(6), manualAdvance: true, actionMs: 10000, pauseMs: 3000, graceMs: 0, now: () => t });
+function capturePawn(g) {
   g.apply('w', { type: 'move', from: 'e2', to: 'e4' });
   g.apply('b', { type: 'move', from: 'd7', to: 'd5' });
   g.apply('w', { type: 'move', from: 'e4', to: 'd5' });
+}
+
+test('manual advance: finished hand stays on the table until tick() after the pause', () => {
+  let t = 1000;
+  const g = new Game({ rng: mulberry(6), manualAdvance: true, actionMs: 10000, pauseMs: 3000, now: () => t });
+  capturePawn(g);
   assert.equal(g.phase, 'poker');
   assert.equal(g.viewFor('w').actionMs, 10000);
   assert.equal(g.hand.toAct, 'w');
@@ -277,6 +281,8 @@ test('manual advance: finished hand stays on the table until tick() after the pa
   assert.equal(v.hand.done, true);
   assert.equal(v.hand.result.winner, 'b');
   assert.deepEqual(v.hand.acts.w.kind, 'fold');
+  assert.equal(v.hand.lastActor, 'w');
+  assert.deepEqual(v.hand.endBets, { w: 5, b: 10 });   // what was on the table when the hand ended
   assert.equal(v.actionMs, 0);
   assert.equal(g.apply('b', { type: 'poker', kind: 'check' }).ok, false);
   t += 2999; assert.equal(g.tick(), false);
@@ -286,29 +292,94 @@ test('manual advance: finished hand stays on the table until tick() after the pa
   assert.equal(g.match.button, 'w');          // capturer keeps the button
 });
 
-test('action clock: running out of time checks when free, folds when facing a bet', () => {
+test('intro and deal hold: nobody can act and the clock starts when the hold ends', () => {
   let t = 0;
-  const g = new Game({ rng: mulberry(8), manualAdvance: true, actionMs: 10000, pauseMs: 3000, graceMs: 1500, now: () => t });
-  g.apply('w', { type: 'move', from: 'e2', to: 'e4' });
-  g.apply('b', { type: 'move', from: 'd7', to: 'd5' });
-  g.apply('w', { type: 'move', from: 'e4', to: 'd5' });
-  assert.equal(g.viewFor('w').actionMs, 11500);  // first decision of a hand gets the deal-animation grace
-  t += 11499; assert.equal(g.tick(), false);
-  t += 2;
+  const g = new Game({ rng: mulberry(8), manualAdvance: true, actionMs: 20000, introMs: 12300, dealMs: 2800, now: () => t });
+  capturePawn(g);
+  assert.equal(g.viewFor('w').holdMs, 15100);               // first hand of an exchange: pop-up + deal
+  assert.equal(g.viewFor('w').introMs, 12300);
+  assert.equal(g.viewFor('w').actionMs, 15100 + 20000);     // the clock only runs after the hold
+  assert.equal(g.apply('w', { type: 'poker', kind: 'call' }).ok, false);
+  t += 15099; assert.equal(g.tick(), false);
+  t += 2; assert.equal(g.tick(), true);                     // hold over, state changed so views get pushed
+  assert.equal(g.viewFor('w').holdMs, 0);
+  assert.ok(g.apply('w', { type: 'poker', kind: 'call' }).ok);
+});
+
+test('2 second buffer after every decision, and the next clock starts after it', () => {
+  let t = 0;
+  const g = new Game({ rng: mulberry(8), manualAdvance: true, actionMs: 20000, bufferMs: 2000, now: () => t });
+  capturePawn(g);
+  assert.ok(g.apply('w', { type: 'poker', kind: 'raise', amount: 20 }).ok);
+  const v = g.viewFor('b');
+  assert.equal(v.hand.toAct, 'b');
+  assert.equal(v.holdMs, 2000);
+  assert.equal(v.actionMs, 22000);
+  assert.equal(g.apply('b', { type: 'poker', kind: 'call' }).ok, false);   // still showing white's raise
+  t += 1999; assert.equal(g.tick(), false);
+  t += 2; assert.equal(g.tick(), true);
+  assert.ok(g.apply('b', { type: 'poker', kind: 'call' }).ok);
+});
+
+test('action clock: out of time checks when free, folds when facing a bet', () => {
+  let t = 0;
+  const g = new Game({ rng: mulberry(8), manualAdvance: true, actionMs: 10000, pauseMs: 3000, now: () => t });
+  capturePawn(g);
+  t += 10001;
   assert.equal(g.tick(), true);                  // white (small blind) faces 5 more: times out -> folds
   assert.equal(g.hand.result.winner, 'b');
   assert.deepEqual(g.hand.acts.w.kind, 'fold');
-  // new test of the check branch: big blind acting after a limp
-  const g2 = new Game({ rng: mulberry(8), manualAdvance: true, actionMs: 10000, pauseMs: 3000, graceMs: 0, now: () => t });
-  g2.apply('w', { type: 'move', from: 'e2', to: 'e4' });
-  g2.apply('b', { type: 'move', from: 'd7', to: 'd5' });
-  g2.apply('w', { type: 'move', from: 'e4', to: 'd5' });
+  const g2 = new Game({ rng: mulberry(8), manualAdvance: true, actionMs: 10000, pauseMs: 3000, now: () => t });
+  capturePawn(g2);
   g2.apply('w', { type: 'poker', kind: 'call' });
   assert.equal(g2.hand.toAct, 'b');
   t += 10001;
   assert.equal(g2.tick(), true);
   assert.equal(g2.hand.acts.b.kind, 'check');    // free to check, so no fold
   assert.equal(g2.hand.street, 'flop');
+  assert.equal(g2.hand.sweep.from, 'preflop');   // the street's bets were swept into the pot
+  assert.deepEqual(g2.hand.sweep.bets, { w: 10, b: 10 });
+});
+
+test('overtime: 30s bank per player is used after the clock, drains, and refills every exchange', () => {
+  let t = 0;
+  const mk = () => new Game({ rng: mulberry(8), manualAdvance: true, actionMs: 10000, overtimeMs: 30000, pauseMs: 3000, now: () => t });
+  const g = mk();
+  capturePawn(g);
+  assert.deepEqual(g.viewFor('w').overtime, { w: 30000, b: 30000 });
+  t += 10001;
+  assert.equal(g.tick(), true);                         // enters overtime, no action taken yet
+  assert.equal(g.hand.acts.w, null);
+  let v = g.viewFor('w');
+  assert.equal(v.clockMode, 'ot');
+  assert.equal(v.actionTotal, 30000);
+  assert.ok(v.actionMs > 29900 && v.actionMs <= 30000 - 1);
+  t += 5000;                                            // white thinks 5 more seconds, then calls
+  assert.ok(g.apply('w', { type: 'poker', kind: 'call' }).ok);
+  assert.ok(Math.abs(g.ot.w - (30000 - 5001)) <= 2, 'bank drained by the time used: ' + g.ot.w);
+  assert.equal(g.ot.b, 30000);
+  v = g.viewFor('b');
+  assert.equal(v.clockMode, 'main');                    // black starts on the normal clock again
+  assert.equal(v.actionTotal, 10000);
+  // black burns the clock and the whole bank
+  t += 10001; assert.equal(g.tick(), true);
+  assert.equal(g.viewFor('b').clockMode, 'ot');
+  t += 30001; assert.equal(g.tick(), true);
+  assert.equal(g.hand.acts.b.kind, 'check');            // free to check once everything ran out
+  assert.equal(g.ot.b, 0);
+  // a new exchange gives everyone a full bank again
+  const g2 = mk();
+  capturePawn(g2);
+  assert.deepEqual(g2.ot, { w: 30000, b: 30000 });
+  // finish the first exchange: banks refill for the next capture
+  let guard = 0;
+  while (g.phase === 'poker' && guard++ < 500) {
+    if (g.hand.done) { t += 3001; g.tick(); continue; }
+    const s = g.hand.toAct;
+    g.apply(s, { type: 'poker', kind: P.options(g.hand, s).canCheck ? 'check' : 'call' });
+    t += 2100; g.tick();
+  }
+  assert.equal(g.phase, 'chess');
 });
 
 test('views carry each seat last action, blinds positions and BB size', () => {
@@ -324,6 +395,7 @@ test('views carry each seat last action, blinds positions and BB size', () => {
   assert.equal(v.hand.sb, 5);
   assert.equal(v.hand.bb, 10);
   assert.equal(v.bb, 10);
-  assert.equal(v.hand.options.minRaiseTo, 30);   // facing a raise to 20 over a 10 blind
-  assert.ok(v.hand.options.maxRaiseTo <= 40);    // never more than the short stack
+  assert.ok(!v.hand.options.maxRaiseTo || v.hand.options.maxRaiseTo <= 20);  // defender has only 2 BB, so no re-raise past all-in
+  assert.equal(v.hand.lastActor, 'w');
+  assert.equal(v.hand.sweep, null);              // nothing swept yet this hand
 });

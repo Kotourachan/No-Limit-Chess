@@ -6,6 +6,8 @@ export const RANKS = '23456789TJQKA';
 export const SUITS = '♠♥♦♣';
 export const SUIT_LETTERS = 'shdc';
 const SEAT_NAME = { w: 'White', b: 'Black' };
+// Log lines speak in big blinds, like the rest of the screen.
+const inBB = (h, chips) => `${Math.round((chips / h.bb) * 100) / 100} BB`;
 
 export const cardStr = (id) => RANKS[id % 13] + SUITS[Math.floor(id / 13)];
 export const cardKey = (id) => RANKS[id % 13] + SUIT_LETTERS[Math.floor(id / 13)]; // e.g. "As"
@@ -103,6 +105,9 @@ export function startHand({ stacks, button, initiator, ante = 0, sb, bb, rng }) 
     lastRaise: bb,
     toAct: button,
     acts: { w: null, b: null }, // last action of each seat, shown at the table
+    lastActor: null,
+    sweep: null,    // bets collected into the pot when a street ended: { from, bets }
+    endBets: null,  // bets on the table when the hand ended (before any refund)
     done: false,
     result: null,
     log: [],
@@ -111,12 +116,12 @@ export function startHand({ stacks, button, initiator, ante = 0, sb, bb, rng }) 
     const a = Math.min(ante, h.stacks[initiator]);
     h.stacks[initiator] -= a;
     h.dead += a;
-    if (a > 0) h.log.push(`${SEAT_NAME[initiator]} posts a dead ante of ${a}`);
+    if (a > 0) h.log.push(`${SEAT_NAME[initiator]} posts a dead ante of ${inBB(h, a)}`);
   }
   post(h, button, sb);
   post(h, nb, bb);
   h.currentBet = Math.max(h.bets.w, h.bets.b);
-  h.log.push(`${SEAT_NAME[button]} has the button (small blind ${h.bets[button]}), ${SEAT_NAME[nb]} posts big blind ${h.bets[nb]}`);
+  h.log.push(`${SEAT_NAME[button]} is the dealer (small blind ${inBB(h, h.bets[button])}), ${SEAT_NAME[nb]} posts the big blind ${inBB(h, h.bets[nb])}`);
   if (roundComplete(h)) endRound(h);
   return h;
 }
@@ -140,6 +145,7 @@ function endRound(h) {
     h.street = 'showdown';
     return finish(h, {});
   }
+  h.sweep = { from: h.street, bets: { w: h.bets.w, b: h.bets.b } };
   h.street = h.street === 'preflop' ? 'flop' : h.street === 'flop' ? 'turn' : 'river';
   dealTo(h, h.street === 'flop' ? 3 : h.street === 'turn' ? 4 : 5);
   h.bets = { w: 0, b: 0 };
@@ -151,6 +157,7 @@ function endRound(h) {
 }
 
 function finish(h, { folder }) {
+  h.endBets = { w: h.bets.w, b: h.bets.b };
   // Return any uncalled excess to whoever bet it.
   if (h.committed.w !== h.committed.b) {
     const big = h.committed.w > h.committed.b ? 'w' : 'b';
@@ -183,9 +190,9 @@ function finish(h, { folder }) {
   h.done = true;
   h.toAct = null;
   h.result = result;
-  if (folder) h.log.push(`${SEAT_NAME[folder]} folds. ${SEAT_NAME[result.winner]} wins ${pot}`);
-  else if (result.winner === 'tie') h.log.push(`Split pot of ${pot} (${result.names.w})`);
-  else h.log.push(`${SEAT_NAME[result.winner]} wins ${pot} with ${result.names[result.winner]}`);
+  if (folder) h.log.push(`${SEAT_NAME[folder]} folds. ${SEAT_NAME[result.winner]} wins ${inBB(h, pot)}`);
+  else if (result.winner === 'tie') h.log.push(`Split pot of ${inBB(h, pot)} (${result.names.w})`);
+  else h.log.push(`${SEAT_NAME[result.winner]} wins ${inBB(h, pot)} with ${result.names[result.winner]}`);
 }
 
 export function options(h, seat) {
@@ -219,6 +226,7 @@ export function act(h, seat, action) {
 
   if (kind === 'fold') {
     h.acts[seat] = { kind: 'fold', street: h.street };
+    h.lastActor = seat;
     h.log.push(`${who} folds`);
     finish(h, { folder: seat });
     return { ok: true };
@@ -233,7 +241,7 @@ export function act(h, seat, action) {
     h.stacks[seat] -= a; h.bets[seat] += a; h.committed[seat] += a;
     h.acted[seat] = true;
     h.acts[seat] = { kind: 'call', amount: a, allIn: h.stacks[seat] === 0, street: h.street };
-    h.log.push(`${who} calls ${a}${h.stacks[seat] === 0 ? ' (all-in)' : ''}`);
+    h.log.push(`${who} calls ${inBB(h, a)}${h.stacks[seat] === 0 ? ' (all-in)' : ''}`);
   } else if (kind === 'raise') {
     if (!o.canRaise) return { ok: false, error: "Can't raise" };
     let to = Math.floor(Number(action.amount));
@@ -247,10 +255,11 @@ export function act(h, seat, action) {
     h.currentBet = to;
     h.acted[seat] = true;
     h.acted[opp] = false;
-    h.log.push(`${who} ${verb} ${to}${h.stacks[seat] === 0 ? ' (all-in)' : ''}`);
+    h.log.push(`${who} ${verb} ${inBB(h, to)}${h.stacks[seat] === 0 ? ' (all-in)' : ''}`);
   } else {
     return { ok: false, error: 'Unknown action' };
   }
+  h.lastActor = seat;
   if (roundComplete(h)) endRound(h);
   else h.toAct = opp;
   return { ok: true };

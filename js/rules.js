@@ -6,12 +6,14 @@ export const RULES = {
   sb: 5,
 
   // Every capture is its own mini-match. Each side starts with
-  //   (baseStackBB + value of their piece in the exchange) BB.
+  //   baseStackBB + (value of their piece in the exchange)
   // The capturer's piece is theirs; the defender's "piece" is the one just captured.
-  // Example: a bishop (3) takes a pawn (1): capturer 6 BB, defender 4 BB.
-  // A bishop taking a queen (9): capturer 6 BB, defender 12 BB. There is no extra bonus or
-  // penalty for the difference in value, the piece values alone set the stacks.
+  // The capturer (the initiator) also gets initiatorBonusBB on top.
+  // Example: a bishop (3) takes a pawn (1): capturer 3+3+2 = 8 BB, defender 3+1-2 = 2 BB.
   baseStackBB: 3,
+  initiatorBonusBB: 2,
+  // The defender is down this many BB (stack = base + piece value - penalty).
+  defenderPenaltyBB: 2,
   pieceValues: { p: 1, n: 3, b: 3, r: 5, q: 9 },
 
   // The king plays normal chess: any king capture just happens, with no hand.
@@ -19,13 +21,23 @@ export const RULES = {
 
   // Captures made while in check are forced, so they also skip the hand.
   forcedCapturesSkipHand: true,
+
+  // Timing, all in milliseconds.
+  timing: {
+    introMs: 12300,       // the "Capture!" pop-up with both stacks
+    dealMs: 2800,         // cards dealt and blinds posted at the start of every hand
+    bufferMs: 2000,       // pause after every decision so the move and the chips can be seen
+    actionMs: 20000,      // clock for each decision
+    overtimeMs: 30000,    // extra time bank per player, refilled at the start of every exchange
+    pauseMs: 4800,        // a finished hand stays on the table (showdown, chips to the winner)
+  },
 };
 
 // Starting stacks (in chips) for an exchange.
 export function exchangeStacks(attackerPiece, capturedPiece, rules = RULES) {
   const v = rules.pieceValues;
   return {
-    attacker: (rules.baseStackBB + v[attackerPiece]) * rules.bb,
-    defender: (rules.baseStackBB + v[capturedPiece]) * rules.bb,
+    attacker: (rules.baseStackBB + v[attackerPiece] + (rules.initiatorBonusBB || 0)) * rules.bb,
+    defender: Math.max(1, rules.baseStackBB + v[capturedPiece] - (rules.defenderPenaltyBB || 0)) * rules.bb,
   };
 }

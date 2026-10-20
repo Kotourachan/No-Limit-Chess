@@ -1,6 +1,8 @@
 // Placeholder UI. Everything visual goes through skin.js so art can be dropped in later.
 // Screens: lobby, ai lobby, waiting, game (chess board), table (poker exchange).
 // When a capture starts, a pop-up shows both starting stacks, then the oval table appears.
+// On the table one BB is one chip: stacks are piles, bets sit on the felt, and chips fly
+// between piles, bets, the pot and the winner whenever something changes.
 import { pieceEl, cardEl, emptyCardEl, squareBg } from './skin.js';
 import { RULES } from './rules.js';
 
@@ -8,7 +10,7 @@ const $ = (id) => document.getElementById(id);
 const other = (s) => (s === 'w' ? 'b' : 'w');
 const NAME = { w: 'White', b: 'Black' };
 const PIECE = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
-const INTRO_MS = 2300;
+const SEATS = ['w', 'b'];
 
 // Chip amounts are shown in big blinds everywhere, so stacks, bets and pot always agree.
 const fmt = (chips, bb) => String(Math.round((chips / bb) * 100) / 100);
@@ -41,17 +43,80 @@ function parseFen(fen) {
   return out;
 }
 
+// ---------- chips ----------
+const CHIP_COLS = 5;                 // chips per column in a pile
+const LEG_MS = 620, STAGGER_MS = 70; // flight time of one hop, delay between chips of one flight
+
+const reducedMotion = () => {
+  try { return !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); } catch (e) { return false; }
+};
+
+// One chip per BB. A part of a BB (a 0.5 BB blind) is one small chip.
+function chipCount(chips, bb) {
+  if (chips <= 0) return { full: 0, n: 0 };
+  const full = Math.floor(chips / bb + 1e-9);
+  const part = chips - full * bb > 1e-9 ? 1 : 0;
+  return { full, n: full + part };
+}
+
+// A pile of chips in columns of five. Chips from index `from` on are new: they fade in after `delay` ms,
+// when the flying chips land.
+function pileEl(chips, bb, { from = null, delay = 0, small = false } = {}) {
+  const { full, n } = chipCount(chips, bb);
+  const wrap = h('div', { class: 'pile' + (small ? ' small' : '') + (n ? '' : ' empty') });
+  let col = null;
+  for (let i = 0; i < n; i++) {
+    if (i % CHIP_COLS === 0) { col = h('div', { class: 'col' }); wrap.append(col); }
+    const c = h('span', { class: 'chip ' + (i < full ? 'full' : 'half') });
+    if (from != null && i >= from) { c.classList.add('arriving'); c.style.animationDelay = Math.round(delay) + 'ms'; }
+    col.append(c);
+  }
+  return wrap;
+}
+
+// Chips travelling through the elements in `legs` (e.g. [pile, bet spot]). Purely decorative: the
+// real chips already sit where they belong and fade in when the flying ones land.
+function flyChips(legs, nChips, { delay = 0 } = {}) {
+  const layer = $('fx');
+  if (!layer || reducedMotion() || nChips <= 0 || legs.some((l) => !l)) return;
+  const pts = legs.map((el) => { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+  const frames = [{ t: 0, p: pts[0] }];
+  let t = 0;
+  for (let k = 1; k < pts.length; k++) {
+    t += LEG_MS; frames.push({ t, p: pts[k] });
+    if (k < pts.length - 1) { t += 160; frames.push({ t, p: pts[k] }); }
+  }
+  const total = t;
+  for (let i = 0; i < Math.min(nChips, 12); i++) {
+    const c = h('span', { class: 'chip full fly' });
+    c.style.left = pts[0].x - 11 + 'px';
+    c.style.top = pts[0].y - 11 + 'px';
+    layer.append(c);
+    if (typeof c.animate !== 'function') { c.remove(); continue; }
+    const jx = (Math.random() - 0.5) * 12, jy = (Math.random() - 0.5) * 8;
+    const move = (p, k) => `translate(${p.x - pts[0].x + (k ? jx : 0)}px, ${p.y - pts[0].y + (k ? jy : 0)}px)`;
+    const kf = [{ offset: 0, transform: move(pts[0], 0), opacity: 0 }, { offset: 0.03, transform: move(pts[0], 0), opacity: 1, easing: 'ease-in-out' }];
+    frames.forEach((fr, k) => { if (k > 0) kf.push({ offset: fr.t / total - (k === frames.length - 1 ? 0.04 : 0), transform: move(fr.p, k), opacity: 1, easing: 'ease-in-out' }); });
+    kf.push({ offset: 1, transform: move(frames[frames.length - 1].p, 1), opacity: 0 });
+    const d = delay + i * STAGGER_MS;
+    const anim = c.animate(kf, { duration: total, delay: d, fill: 'both' });
+    const done = () => c.remove();
+    anim.onfinish = done;
+    setTimeout(done, d + total + 400);
+  }
+}
+
 export function createUI(cb) {
   let selected = null;
   let lastView = null;
   let lastMeta = {};
   let toastTimer = null;
-  let seenExchange;                    // last exchange number announced (undefined until the first update)
-  let lastPly;                         // last chess ply drawn, to animate only new moves
-  let dealt = { id: null, board: 0 };  // what is already on the table, so only new cards animate
-  let prev = { id: null, acts: { w: '', b: '' }, bets: { w: 0, b: 0 }, pot: 0, doneShown: null };
-  let clock = null;                    // { end, total } for the visible countdown
-  let introFor = 0, introUntil = 0, introTimer = null;
+  let seenExchange;                  // last exchange number announced (undefined until the first update)
+  let lastPly;                       // last chess ply drawn, to animate only new moves
+  const blankPrev = () => ({ id: null, acts: { w: '', b: '' }, bets: { w: 0, b: 0 }, stacks: null, pot: 0, street: 'preflop', doneShown: null });
+  let prev = blankPrev();            // what the table showed last time, so only changes animate
+  let clock = null;                  // { end, total, mode } for the visible countdown
+  let introFor = 0, introUntil = 0, introTimer = null, introBuilt = 0;
 
   const screens = ['lobby', 'waiting', 'game', 'ai', 'table'];
   function show(name) { for (const s of screens) $(s).hidden = s !== name; }
@@ -87,15 +152,16 @@ export function createUI(cb) {
     toastTimer = setTimeout(() => (t.hidden = true), 4000);
   }
 
-  // The 10 second clock under the player whose turn it is.
+  // The clock under the player whose turn it is (decision clock, then the overtime bank).
   setInterval(() => {
     const fill = $('t-fill');
     if (!clock || !fill) return;
     const left = Math.max(0, clock.end - Date.now());
     fill.style.width = Math.min(100, (left / clock.total) * 100) + '%';
     const sec = $('t-sec');
-    if (sec) sec.textContent = Math.min(Math.ceil(clock.total / 1000), Math.ceil(left / 1000)) + 's';
+    if (sec) sec.textContent = (clock.mode === 'ot' ? 'Overtime ' : '') + Math.min(Math.ceil(clock.total / 1000), Math.ceil(left / 1000)) + 's';
     fill.parentElement.classList.toggle('low', left < 3000);
+    fill.parentElement.classList.toggle('ot', clock.mode === 'ot');
   }, 100);
 
   // ---------- chess board ----------
@@ -242,17 +308,26 @@ export function createUI(cb) {
     const me = v.you, opp = other(me);
     const nm = (s) => (local ? NAME[s] : s === me ? 'You' : (meta.oppName || 'Opponent'));
     const cap = p.color, def = other(p.color);
-    const pieceOf = (s) => (s === cap ? p.piece : p.captured);
-    const part = (s) => h('div', { class: 'stackcard' + (s === cap ? ' cap' : '') },
-      h('div', { class: 'who' }, nm(s), local ? null : h('span', { class: 'sub' }, ` (${NAME[s]})`)),
-      h('div', { class: 'big' }, `${f(p.startStacks[s])} BB`),
-      h('div', { class: 'brk' }, `${RULES.baseStackBB} base + ${RULES.pieceValues[pieceOf(s)]} for the ${PIECE[pieceOf(s)]}`),
-      s === cap ? h('div', { class: 'role' }, 'attacker · button') : h('div', { class: 'role' }, 'defender'));
+    const part = (s) => {
+      const isCap = s === cap;
+      const piece = isCap ? p.piece : p.captured;
+      const lines = [`${RULES.baseStackBB} base`, `+ ${RULES.pieceValues[piece]} for the ${PIECE[piece]}`];
+      if (isCap) lines.push(`+ ${RULES.initiatorBonusBB} for initiating`);
+      else if (RULES.defenderPenaltyBB) lines.push(`- ${RULES.defenderPenaltyBB} for defending`);
+      return h('div', { class: 'stackcard' + (isCap ? ' attacker' : '') },
+        h('div', { class: 'who' }, nm(s), local ? null : h('span', { class: 'sub' }, ` (${NAME[s]})`)),
+        h('div', { class: 'big' }, `${f(p.startStacks[s])} BB`),
+        pileEl(p.startStacks[s], bb, { small: true }),
+        h('ul', { class: 'brk' }, lines.map((l) => h('li', {}, l))),
+        h('div', { class: 'role' }, isCap ? 'attacker · dealer' : 'defender'));
+    };
     $('intro-box').replaceChildren(
       h('div', { class: 'kicker' }, p.isRecapture ? 'Recapture!' : 'Capture!'),
       h('div', { class: 'line' }, `${NAME[cap]}'s ${PIECE[p.piece]} takes ${NAME[def]}'s ${PIECE[p.captured]} on ${p.to}`),
       h('div', { class: 'versus' }, part(me), h('span', { class: 'vs' }, 'vs'), part(opp)),
-      h('div', { class: 'foot' }, `Poker hands until one side is out of chips. If ${NAME[cap]} loses, the ${PIECE[p.piece]} is lost.`),
+      h('div', { class: 'foot' }, `One chip is one BB. Poker hands until one side is out of chips. If ${NAME[cap]} loses, the ${PIECE[p.piece]} is lost.`),
+      h('div', { class: 'introbar' }, h('div', { class: 'fill', style: `animation-duration:${v.introMs}ms` })),
+      h('div', { class: 'foot' }, 'The table opens in a moment…'),
     );
   }
 
@@ -267,26 +342,27 @@ export function createUI(cb) {
     return t + (a.allIn ? ' · all-in' : '');
   }
 
-  function buildControls(v, hd, me) {
+  function buildControls(v, hd, me, held) {
     const bb = v.bb;
     const f = (c) => fmt(c, bb);
     const o = hd.options;
     const opp = other(me);
-    const wrap = h('div', { class: 'ctl' });
-    wrap.append(h('div', { class: 'turnmsg' }, 'Your action'));
+    const wrap = h('div', { class: 'ctl' + (held ? ' held' : '') });
+    wrap.append(h('div', { class: 'turnmsg' }, held ? 'Your turn is coming up…' : 'Your action'));
     const row = h('div', { class: 'btnrow' });
-    row.append(h('button', { class: 'danger', onclick: () => cb.onAction({ type: 'poker', kind: 'fold' }) }, 'Fold'));
-    if (o.canCheck) row.append(h('button', { onclick: () => cb.onAction({ type: 'poker', kind: 'check' }) }, 'Check'));
-    else row.append(h('button', { class: 'callbtn', onclick: () => cb.onAction({ type: 'poker', kind: 'call' }) },
+    row.append(h('button', { class: 'danger', disabled: held, onclick: () => cb.onAction({ type: 'poker', kind: 'fold' }) }, 'Fold'));
+    if (o.canCheck) row.append(h('button', { disabled: held, onclick: () => cb.onAction({ type: 'poker', kind: 'check' }) }, 'Check'));
+    else row.append(h('button', { class: 'callbtn', disabled: held, onclick: () => cb.onAction({ type: 'poker', kind: 'call' }) },
       `Call ${f(o.callAmount)} BB` + (o.callAmount >= hd.stacks[me] ? ' (all-in)' : '')));
     wrap.append(row);
 
     if (o.canRaise) {
       const lo = o.minRaiseTo, hi = o.maxRaiseTo;
-      const clamp = (c) => Math.max(lo, Math.min(hi, Math.round(c)));
+      const step = hd.sb; // bets move in half-blind steps, so every chip on the table is a clean 0.5 BB
+      const clamp = (c) => Math.max(lo, Math.min(hi, Math.round(c / step) * step));
       const verb = hd.bets.w === 0 && hd.bets.b === 0 ? 'Bet' : 'Raise to';
-      const range = h('input', { type: 'range', min: lo, max: hi, value: lo, step: 1 });
-      const num = h('input', { type: 'number', min: lo / bb, max: hi / bb, step: 0.5, value: lo / bb, class: 'amt', inputmode: 'decimal' });
+      const range = h('input', { type: 'range', min: lo, max: hi, value: lo, step: 1, disabled: held });
+      const num = h('input', { type: 'number', min: lo / bb, max: hi / bb, step: 0.5, value: lo / bb, class: 'amt', inputmode: 'decimal', disabled: held });
       const setTo = (c) => { const x = clamp(c); range.value = x; num.value = x / bb; return x; };
       range.addEventListener('input', () => { num.value = Number(range.value) / bb; });
       num.addEventListener('input', () => { const c = Number(num.value) * bb; if (Number.isFinite(c)) range.value = clamp(c); });
@@ -294,13 +370,13 @@ export function createUI(cb) {
       num.addEventListener('blur', () => setTo(Number(num.value) * bb || lo));
       const quick = h('div', { class: 'quick' });
       for (const [lbl, fr] of [['½ pot', 0.5], ['pot', 1], ['2× pot', 2]]) {
-        quick.append(h('button', { class: 'small', onclick: () => setTo(hd.bets[opp] + (hd.pot + o.callAmount) * fr) }, lbl));
+        quick.append(h('button', { class: 'small', disabled: held, onclick: () => setTo(hd.bets[opp] + (hd.pot + o.callAmount) * fr) }, lbl));
       }
-      const go = h('button', { class: 'primary', onclick: () => {
+      const go = h('button', { class: 'primary', disabled: held, onclick: () => {
         const c = setTo(Number(num.value) * bb || lo);
         cb.onAction({ type: 'poker', kind: 'raise', amount: c });
       } }, verb);
-      const allin = h('button', { class: 'accent', onclick: () => cb.onAction({ type: 'poker', kind: 'allin' }) }, `All-in ${f(hi)} BB`);
+      const allin = h('button', { class: 'accent', disabled: held, onclick: () => cb.onAction({ type: 'poker', kind: 'allin' }) }, `All-in ${f(hi)} BB`);
       wrap.append(
         h('div', { class: 'rangeinfo' }, `Minimum ${f(lo)} BB · maximum ${f(hi)} BB`),
         range, quick,
@@ -317,8 +393,15 @@ export function createUI(cb) {
     const oppName = meta.oppName || 'Opponent';
     const nm = (s) => (local ? NAME[s] : s === me ? 'You' : oppName);
     const f = (c) => fmt(c, bb);
-    const newHand = hd.id !== dealt.id;
-    const pv = hd.id === prev.id ? prev : { id: hd.id, acts: { w: '', b: '' }, bets: { w: 0, b: 0 }, pot: 0, doneShown: null };
+    const cnt = (c) => chipCount(c, bb).n;
+    const newHand = hd.id !== prev.id;
+    const pv = newHand ? blankPrev() : prev;
+    const held = v.holdMs > 0;
+    const justDone = hd.done && pv.doneShown !== hd.id;
+    const streetChanged = !newHand && !hd.done && hd.street !== pv.street;
+    const sweeping = justDone || streetChanged;   // the bets on the felt go to the pot
+    const still = reducedMotion();                // no flights: show the end state straight away
+    const sbSeat = hd.button, bbSeat = other(hd.button);
 
     $('t-status').textContent = hd.done ? 'Hand finished' : `Exchange hand ${hd.handNo} · ${hd.street}`;
     $('t-room').textContent = meta.code ? `Room ${meta.code}` : local ? 'Local test' : '';
@@ -329,67 +412,129 @@ export function createUI(cb) {
     const st = p.startStacks, cap = p.color, def = other(p.color);
     $('t-capture').replaceChildren(
       h('div', { class: 'headline' }, `${NAME[cap]}'s ${PIECE[p.piece]} takes ${NAME[def]}'s ${PIECE[p.captured]} on ${p.to}${p.isRecapture ? ' (recapture)' : ''}`),
-      h('div', { class: 'sub' }, `Stacks: ${NAME[cap]} ${f(st[cap])} BB, ${NAME[def]} ${f(st[def])} BB. If ${NAME[cap]} loses, the ${PIECE[p.piece]} is lost.`),
+      h('div', { class: 'sub' }, `Started with ${NAME[cap]} ${f(st[cap])} BB, ${NAME[def]} ${f(st[def])} BB. If ${NAME[cap]} loses, the ${PIECE[p.piece]} is lost.`),
     );
 
+    // ----- what chips have to do this time (decided from what changed since the last draw)
+    const target = {};   // chips sitting on the felt for each seat once the decision is in
+    for (const s of SEATS) target[s] = justDone ? (hd.endBets ? hd.endBets[s] : 0) : streetChanged ? (hd.sweep ? hd.sweep.bets[s] : 0) : hd.bets[s];
+    const plan = [];     // [{ legs: ['pile:w', 'spot:w'], n, delay }]
+    const arriveSpot = { w: 0, b: 0 }, arrivePile = { w: 0, b: 0 };
+    let anyBet = false, lastLand = 0;
+    for (const s of SEATS) {
+      const delta = target[s] - pv.bets[s];
+      if (delta <= 0) continue;
+      const d0 = newHand ? 900 + (s === sbSeat ? 0 : 250) : 0;   // blinds go in after the cards are dealt
+      plan.push({ legs: ['pile:' + s, 'spot:' + s], n: cnt(delta), delay: d0 });
+      arriveSpot[s] = d0 + LEG_MS;
+      lastLand = Math.max(lastLand, d0 + LEG_MS);
+      anyBet = true;
+    }
+    let sweepStart = 0, potLand = 0, collectStart = null;
+    if (sweeping) {
+      sweepStart = anyBet ? lastLand + 450 : 300;
+      for (const s of SEATS) if (target[s] > 0) plan.push({ legs: ['spot:' + s, 'pot'], n: cnt(target[s]), delay: sweepStart });
+      potLand = sweepStart + LEG_MS;
+    }
+    if (justDone) {
+      collectStart = potLand + 650;
+      const win = hd.result.winner;
+      const rec = win === 'tie' ? SEATS : [win];
+      for (const s of rec) {
+        plan.push({ legs: ['pot', 'pile:' + s], n: cnt(hd.pot / rec.length), delay: collectStart });
+        arrivePile[s] = collectStart + LEG_MS;
+      }
+    }
+
+    // ----- seats
+    const pileEls = {}, spotEls = {};
     const nextActs = { w: JSON.stringify(hd.acts.w), b: JSON.stringify(hd.acts.b) };
     function seatEl(seat, isMe) {
-      const role = seat === hd.button ? 'SB' : 'BB';
+      const role = seat === sbSeat ? 'SB' : 'BB';
       const acting = hd.toAct === seat && !hd.done;
       const a = hd.acts[seat];
       const stale = a && a.street !== hd.street;
       const fresh = a && nextActs[seat] !== pv.acts[seat];
-      const actLabel = acting ? (isMe ? 'Your turn' : (meta.mode === 'ai' ? 'Thinking…' : 'Deciding…')) : actText(a, f);
+      const justActed = !!a && (held || hd.done) && hd.lastActor === seat;
+      let actLabel;
+      if (justActed) actLabel = actText(a, f);   // the move that was just made stays on their card
+      else if (acting) actLabel = isMe ? (held ? 'Get ready…' : 'Your turn') : (held ? 'Waiting…' : (meta.mode === 'ai' ? 'Thinking…' : 'Deciding…'));
+      else actLabel = actText(a, f);
+      const inOt = acting && v.clockMode === 'ot';
+      const otLeft = v.overtime ? v.overtime[seat] : 0;
       const head = h('div', { class: 'seathead' },
         h('span', { class: 'nm' }, nm(seat)),
         local ? null : h('span', { class: 'tag col' }, NAME[seat]),
-        seat === hd.button ? h('span', { class: 'tag dealer', title: 'Dealer button' }, 'D') : null,
+        seat === sbSeat ? h('span', { class: 'tag dealer', title: 'Dealer button' }, 'D') : null,
         h('span', { class: 'tag blind' }, `${role} ${f(role === 'SB' ? hd.sb : hd.bb)}`),
-        h('span', { class: 'act' + (acting ? ' now' : '') + (stale && !acting ? ' old' : '') + (fresh && !acting ? ' fresh' : '') }, actLabel),
+        v.overtimeTotal > 0 ? h('span', { class: 'tag ot' + (inOt ? ' on' : '') + (otLeft <= 0 ? ' none' : ''), title: 'Overtime bank for this exchange' }, `OT ${Math.ceil(otLeft / 1000)}s`) : null,
+        h('span', { class: 'act' + (acting ? ' now' : '') + (stale && !acting && !justActed ? ' old' : '') + (fresh && !acting ? ' fresh' : '') + (justActed ? ' hl' : '') }, actLabel),
       );
       const cards = hd.hole[seat];
       const wrap = h('div', { class: 'cards' });
-      const reveal = hd.done && cards && !isMe && !local && pv.doneShown !== hd.id; // opponent's cards turning over
+      const reveal = justDone && cards && !isMe && !local;   // the opponent's cards turning over
       for (let i = 0; i < 2; i++) {
         const el = cards ? cardEl(cards[i]) : cardEl(null, { faceDown: true });
         if (newHand) { el.classList.add('deal'); el.style.animationDelay = (i * 2 + (isMe ? 1 : 0)) * 0.18 + 's'; }
         else if (reveal) { el.classList.add('flip'); el.style.animationDelay = i * 0.12 + 's'; }
         wrap.append(el);
       }
-      const stackbox = h('div', { class: 'stackbox' },
-        h('div', { class: 'stk' }, `${f(hd.stacks[seat])} BB`),
-        h('div', { class: 'sub' }, 'stack'));
-      const betNew = hd.bets[seat] > 0 && hd.bets[seat] !== pv.bets[seat];
-      const bet = hd.bets[seat] > 0 ? h('div', { class: 'betchip' + (betNew ? ' fresh' : '') }, `bet ${f(hd.bets[seat])} BB`) : null;
-      const kids = [head, h('div', { class: 'cardrow' }, wrap, stackbox, bet)];
+      const nowStack = hd.stacks[seat];
+      const prevStack = pv.stacks ? pv.stacks[seat] : null;
+      const grow = prevStack != null && nowStack > prevStack && arrivePile[seat] > 0;
+      const pile = pileEl(nowStack, bb, { from: grow ? cnt(prevStack) : null, delay: arrivePile[seat] });
+      pileEls[seat] = pile;
+      const stackbox = h('div', { class: 'stackbox' }, pile, h('div', { class: 'stk' }, `${f(nowStack)} BB`));
+      const kids = [head, h('div', { class: 'cardrow' }, wrap, stackbox)];
       if (acting && v.actionMs > 0) {
-        kids.push(h('div', { class: 'timer' }, h('div', { id: 't-fill', class: 'fill' }), h('span', { id: 't-sec', class: 'sec' })));
+        kids.push(h('div', { class: 'timer' + (inOt ? ' ot' : '') }, h('div', { id: 't-fill', class: 'fill' }), h('span', { id: 't-sec', class: 'sec' })));
       }
       const won = hd.done && hd.result.winner === seat;
-      return h('div', { class: 'seatbox' + (acting ? ' acting' : '') + (won ? ' won' : '') }, ...kids);
+      return h('div', { class: 'seatbox' + (acting ? ' acting' : '') + (won ? ' won' : '') + (justActed ? ' justacted k-' + a.kind : '') }, ...kids);
     }
     $('seat-opp').replaceChildren(seatEl(opp, false));
     $('seat-me').replaceChildren(seatEl(me, true));
 
-    // the oval between the players: blinds, board, pot, result
-    const sbSeat = hd.button, bbSeat = other(hd.button);
+    // ----- the oval: bets, blinds, board, pot, result
+    function spotEl(seat) {
+      const amt = sweeping && !still ? target[seat] : hd.bets[seat];
+      const before = pv.bets[seat];
+      const pile = pileEl(amt, bb, { from: amt > before ? cnt(before) : null, delay: arriveSpot[seat], small: true });
+      spotEls[seat] = pile;
+      const lbl = h('div', { class: 'lbl' }, amt > 0 ? `bet ${f(amt)} BB` : '');
+      if (amt > before) { lbl.classList.add('late'); lbl.style.animationDelay = Math.round(arriveSpot[seat]) + 'ms'; }
+      const box = h('div', { class: 'spotbox' }, pile, lbl);
+      if (sweeping && !still && amt > 0) { box.classList.add('leaving'); box.style.setProperty('--ld', sweepStart + 'ms'); }
+      return box;
+    }
+    $('spot-opp').replaceChildren(spotEl(opp));
+    $('spot-me').replaceChildren(spotEl(me));
+
     $('t-blinds').replaceChildren(
       h('span', { class: 'tag blind' }, `Small blind ${f(hd.sb)} BB · ${nm(sbSeat)}`),
       h('span', { class: 'tag blind' }, `Big blind ${f(hd.bb)} BB · ${nm(bbSeat)}`),
     );
-    const prevBoard = hd.id === dealt.id ? dealt.board : 0;
+    $('t-dealer').replaceChildren(h('div', { class: 'dealerchip ' + (sbSeat === opp ? 'top' : 'bottom') + (newHand ? ' slide' : '') },
+      h('span', { class: 'd' }, 'D'), h('small', {}, `dealer · ${nm(sbSeat)}`)));
+
     const bd = $('t-board');
     bd.replaceChildren();
     for (let i = 0; i < 5; i++) {
       if (hd.board[i] != null) {
         const c = cardEl(hd.board[i]);
-        if (i >= prevBoard) { c.classList.add('deal'); c.style.animationDelay = (i - prevBoard) * 0.15 + 's'; }
+        const fresh = newHand ? false : i >= (pv.boardN || 0);
+        if (fresh) { c.classList.add('deal'); c.style.animationDelay = (sweeping ? potLand * 0.6 : 0) / 1000 + (i - (pv.boardN || 0)) * 0.15 + 's'; }
         bd.append(c);
       } else bd.append(emptyCardEl());
     }
+    const settled = hd.done ? hd.pot : hd.pot - hd.bets.w - hd.bets.b;
+    const potGrow = settled > pv.pot && potLand > 0;
+    const potPile = pileEl(hd.done && still ? 0 : settled, bb, { from: potGrow ? cnt(pv.pot) : null, delay: potLand, small: true });
+    if (collectStart != null) { potPile.classList.add('collect'); potPile.style.setProperty('--cd', collectStart + 'ms'); }
+    $('t-potpile').replaceChildren(potPile);
     const potEl = $('t-pot');
     potEl.textContent = `Pot ${f(hd.pot)} BB`;
-    if (hd.pot !== pv.pot) { potEl.classList.remove('bump'); void potEl.offsetWidth; potEl.classList.add('bump'); }
+    if (hd.pot !== (pv.potTotal ?? 0)) { potEl.classList.remove('bump'); void potEl.offsetWidth; potEl.classList.add('bump'); }
 
     const rb = $('t-result');
     if (hd.done) {
@@ -404,21 +549,30 @@ export function createUI(cb) {
         ? (hd.matchStands ? `Exchange over: ${NAME[cap]}'s ${PIECE[p.piece]} takes the ${PIECE[p.captured]}.` : `Exchange over: ${NAME[cap]}'s ${PIECE[p.piece]} is lost.`)
         : 'Next hand coming up…';
       rb.replaceChildren(h('div', { class: 'l1' }, l1), h('div', { class: 'l2' }, l2));
+      rb.style.setProperty('--rd', (justDone ? potLand : 0) + 'ms');
       rb.hidden = false;
     } else rb.hidden = true;
 
     const act = $('t-actions');
     act.replaceChildren();
-    if (!hd.done && hd.toAct === me && hd.options) act.append(buildControls(v, hd, me));
+    if (!hd.done && hd.toAct === me && hd.options) act.append(buildControls(v, hd, me, held));
     else if (!hd.done) act.append(h('div', { class: 'turnmsg wait' }, `Waiting for ${nm(hd.toAct)}…`));
 
     const log = $('t-log');
     log.replaceChildren(...v.log.slice(-6).map((l) => h('div', { class: 'logline' }, l)));
     log.scrollTop = log.scrollHeight;
 
-    clock = (!hd.done && hd.toAct && v.actionMs > 0) ? { end: Date.now() + v.actionMs, total: v.actionTotal || 10000 } : null;
-    dealt = { id: hd.id, board: hd.board.length };
-    prev = { id: hd.id, acts: nextActs, bets: { ...hd.bets }, pot: hd.pot, doneShown: hd.done ? hd.id : null };
+    clock = (!hd.done && hd.toAct && v.actionMs > 0) ? { end: Date.now() + v.actionMs, total: v.actionTotal || 20000, mode: v.clockMode } : null;
+
+    // ----- chips in flight (the elements exist now, so their positions can be measured)
+    const els = { pot: potPile };
+    for (const s of SEATS) { els['pile:' + s] = pileEls[s]; els['spot:' + s] = spotEls[s]; }
+    for (const fl of plan) flyChips(fl.legs.map((k) => els[k]), fl.n, { delay: fl.delay });
+
+    prev = {
+      id: hd.id, acts: nextActs, bets: { ...hd.bets }, stacks: { ...hd.stacks }, pot: settled, potTotal: hd.pot,
+      street: hd.street, boardN: hd.board.length, doneShown: hd.done ? hd.id : null,
+    };
   }
 
   // ---------- full update ----------
@@ -435,13 +589,15 @@ export function createUI(cb) {
       if (introFor !== v.exchangeNo) {
         // a new capture: pop-up with both stacks over the board, then the table
         introFor = v.exchangeNo;
-        introUntil = Date.now() + INTRO_MS;
+        introBuilt = 0;
+        const ms = v.introMs || 0;
+        introUntil = ms > 0 ? Date.now() + ms : 0;
         clearTimeout(introTimer);
-        introTimer = setTimeout(() => { hideIntro(); if (lastView) update(lastView, lastMeta); }, INTRO_MS);
+        if (ms > 0) introTimer = setTimeout(() => { hideIntro(); if (lastView) update(lastView, lastMeta); }, ms);
       }
       if (Date.now() < introUntil) {
         renderChessScreen(v, meta);
-        renderIntro(v, meta);
+        if (introBuilt !== v.exchangeNo) { renderIntro(v, meta); introBuilt = v.exchangeNo; }
         $('intro').hidden = false;
         return;
       }
@@ -451,10 +607,9 @@ export function createUI(cb) {
       return;
     }
     hideIntro();
-    introFor = 0;
+    introFor = 0; introBuilt = 0;
     clock = null;
-    dealt = { id: null, board: 0 };
-    prev = { id: null, acts: { w: '', b: '' }, bets: { w: 0, b: 0 }, pot: 0, doneShown: null };
+    prev = blankPrev();
     renderChessScreen(v, meta);
   }
 
