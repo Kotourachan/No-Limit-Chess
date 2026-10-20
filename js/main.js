@@ -45,6 +45,7 @@ function makeGame() {
     bufferMs: local ? 800 : T.bufferMs,
     runoutFirstMs: T.runoutFirstMs,
     runoutStepMs: T.runoutStepMs,
+    runoutRiverMs: T.runoutRiverMs,
     runoutStallMs: T.runoutStallMs,
     pauseMs: T.pauseMs,
   });

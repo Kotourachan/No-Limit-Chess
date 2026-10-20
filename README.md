@@ -47,9 +47,10 @@ All numbers are in `js/rules.js`.
   Chips are drawn one chip per BB.
 - **Clocks:** 20 s per decision, then a **30 s overtime bank per player per exchange** (refills for every new exchange, not shared).
   Running out means check if free, otherwise fold. After every decision there is a 2 s pause where the move is highlighted on the player's card.
-- **All-in run-out:** once both players are all in, both hands are turned up and the board is dealt one street at a time
-  (2.6 s after the last action, then 2.3 s between flop, turn and river), with a 3.2 s pause on the full board before the result.
-- **Winning the exchange:** the winning piece grows to fill the screen with a big WIN (3 s, tap to skip), then the board returns.
+- **All-in run-out:** once both players are all in, both hands are turned up and the board is dealt in steps: 2 s after the last action the flop
+  comes out quickly, the turn 1.2 s later, then a longer 2.4 s pause before the river, then 3.4 s on the full board before the result.
+- **End of the exchange:** the winning piece grows to fill the screen with a big WIN (3 s, tap to skip), or LOSE in red when your opponent won, then the board returns.
+- **Skipping the pop-up:** if you jump to the table early, a "Setting up the exchange…" bar counts down until play can start.
 - Game ends on checkmate, stalemate or draw rules, resignation, or a king loss. Pawns auto-promote to queens for now.
 - **Local test** mode uses a shorter pop-up and pause, with no clocks.
 

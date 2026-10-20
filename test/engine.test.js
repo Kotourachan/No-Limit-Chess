@@ -421,7 +421,7 @@ test('in check: the king captures for free', () => {
 
 test('staged all-in run-out: the board comes out one street at a time, then a pause, then the result', () => {
   let t = 0;
-  const g = new Game({ rng: mulberry(21), now: () => t, manualAdvance: true, runoutFirstMs: 1000, runoutStepMs: 500, runoutStallMs: 800, pauseMs: 100000 });
+  const g = new Game({ rng: mulberry(21), now: () => t, manualAdvance: true, runoutFirstMs: 1000, runoutStepMs: 500, runoutRiverMs: 900, runoutStallMs: 800, pauseMs: 100000 });
   g.apply('w', { type: 'move', from: 'e2', to: 'e4' });
   g.apply('b', { type: 'move', from: 'd7', to: 'd5' });
   g.apply('w', { type: 'move', from: 'e4', to: 'd5' });
@@ -436,8 +436,9 @@ test('staged all-in run-out: the board comes out one street at a time, then a pa
   assert.ok(g.viewFor('w').hand.hole.b, 'both hands are turned up once the cards are on their back');
   t += 900; g.tick(); assert.equal(g.hand.board.length, 0);
   t += 200; g.tick(); assert.equal(g.hand.board.length, 3);           // flop
-  t += 500; g.tick(); assert.equal(g.hand.board.length, 4);           // turn
-  t += 500; g.tick(); assert.equal(g.hand.board.length, 5);           // river
+  t += 500; g.tick(); assert.equal(g.hand.board.length, 4);           // turn (quick)
+  t += 500; g.tick(); assert.equal(g.hand.board.length, 4);           // longer pause before the river
+  t += 400; g.tick(); assert.equal(g.hand.board.length, 5);           // river
   assert.equal(g.hand.done, false);                                   // stalls on the full board
   t += 700; g.tick(); assert.equal(g.hand.done, false);
   t += 200; g.tick(); assert.equal(g.hand.done, true);                // now the result

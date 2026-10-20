@@ -31,9 +31,10 @@ export const RULES = {
     bufferMs: 2000,       // pause after every decision so the move and the chips can be seen
     actionMs: 20000,      // clock for each decision
     overtimeMs: 30000,    // extra time bank per player, refilled at the start of every exchange
-    runoutFirstMs: 2600,  // all in: let the last action show before the board comes out
-    runoutStepMs: 2300,   // all in: time between flop, turn and river
-    runoutStallMs: 3200,  // all in: pause on the full board before the result
+    runoutFirstMs: 2000,  // all in: let the last action show before the board comes out
+    runoutStepMs: 1200,   // all in: flop to turn goes quickly
+    runoutRiverMs: 2400,  // all in: a longer pause before the river card
+    runoutStallMs: 3400,  // all in: pause on the full board before the result
     pauseMs: 4800,        // a finished hand stays on the table (showdown, chips to the winner)
   },
 };

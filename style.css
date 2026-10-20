@@ -367,3 +367,9 @@ button:disabled { cursor: not-allowed; filter: grayscale(0.6); }
 @keyframes winGrow { 0% { transform: scale(0.05) rotate(-18deg); opacity: 0; } 60% { opacity: 1; } 100% { transform: scale(1) rotate(0); opacity: 1; } }
 @keyframes winText { from { transform: scale(2.2); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .winpiece, .wintext, .winsub, .overlay.winfx { animation: none; } }
+
+/* "setting up" bar when you skip ahead to the table */
+.setupbar { background: var(--panel); border-radius: 10px; padding: 7px 12px; }
+.setuptrack { height: 8px; background: #101216; border-radius: 99px; overflow: hidden; }
+.setupfill { height: 100%; width: 100%; background: var(--accent); border-radius: 99px; transition: width 0.12s linear; }
+.setuplabel { margin-top: 4px; color: var(--muted); font-size: 0.8rem; text-align: center; }

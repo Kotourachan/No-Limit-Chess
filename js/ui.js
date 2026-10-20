@@ -46,7 +46,8 @@ function parseFen(fen) {
 
 // ---------- chips ----------
 const CHIP_COLS = 5;                 // chips per column in a pile
-const DEAL_STEP = 450;   // ms between cards while dealing
+const DEAL_STEP = 450;   // ms between hole cards
+const BOARD_STEP = 260;  // ms between flop cards   // ms between cards while dealing
 const LEG_MS = 620, STAGGER_MS = 70; // flight time of one hop, delay between chips of one flight
 
 const reducedMotion = () => {
@@ -119,6 +120,7 @@ export function createUI(cb) {
   let lastPly;                       // last chess ply drawn, to animate only new moves
   const blankPrev = () => ({ id: null, acts: { w: '', b: '' }, bets: { w: 0, b: 0 }, stacks: null, pot: 0, street: 'preflop', doneShown: null, sweepNo: 0, oppShown: false });
   let prev = blankPrev();            // what the table showed last time, so only changes animate
+  let setup = null;                  // { end, total } while the exchange is still setting up
   let clock = null;                  // { end, total, mode } for the visible countdown
   let introFor = 0, introUntil = 0, arrowUntil = 0, introTimer = null, introTimer2 = null, introBuilt = 0, skippedFor = 0, arrowFor = 0;
 
@@ -164,6 +166,11 @@ export function createUI(cb) {
 
   // The clock under the player whose turn it is (decision clock, then the overtime bank).
   setInterval(() => {
+    if (setup) {
+      const left = Math.max(0, setup.end - Date.now());
+      const f = $('t-setup-fill'); if (f) f.style.width = Math.min(100, (left / setup.total) * 100) + '%';
+      const l = $('t-setup-label'); if (l) l.textContent = `Setting up the exchange… ${Math.ceil(left / 1000)}s`;
+    }
     const fill = $('t-fill');
     if (!clock || !fill) return;
     const left = Math.max(0, clock.end - Date.now());
@@ -560,7 +567,7 @@ export function createUI(cb) {
       if (hd.board[i] != null) {
         const c = cardEl(hd.board[i]);
         const fresh = newHand ? false : i >= (pv.boardN || 0);
-        if (fresh) dealQueue.push({ el: c, delay: (sweeping ? potLand * 0.6 : 0) + (i - (pv.boardN || 0)) * DEAL_STEP });
+        if (fresh) dealQueue.push({ el: c, delay: (sweeping ? potLand * 0.6 : 0) + (i - (pv.boardN || 0)) * BOARD_STEP });
         bd.append(c);
       } else bd.append(emptyCardEl());
     }
@@ -601,6 +608,8 @@ export function createUI(cb) {
     log.replaceChildren(...v.log.slice(-6).map((l) => h('div', { class: 'logline' }, l)));
     log.scrollTop = log.scrollHeight;
 
+    setup = v.holdKind === 'setup' && v.holdMs > 0 && !hd.done ? { end: Date.now() + v.holdMs, total: v.holdTotal || v.holdMs } : null;
+    $('t-setup').hidden = !setup;
     clock = (!hd.done && hd.toAct && v.actionMs > 0) ? { end: Date.now() + v.actionMs, total: v.actionTotal || 20000, mode: v.clockMode } : null;
 
     // ----- chips in flight (the elements exist now, so their positions can be measured)
@@ -648,14 +657,15 @@ export function createUI(cb) {
     const local = meta.mode === 'local';
     const mine = local || x.winner === v.you;
     const who = local ? NAME[x.winner] : mine ? 'You' : (meta.oppName || 'Opponent');
+    const youLose = !mine;   // the opponent won the exchange
     const sub = x.stands
-      ? `${who} ${mine && !local ? 'take' : 'takes'} the ${PIECE[x.captured]} on ${x.to}`
-      : `${who} ${mine && !local ? 'hold' : 'holds'} ${x.to}. The ${PIECE[x.piece]} is lost`;
+      ? (youLose ? `${who} takes your ${PIECE[x.captured]} on ${x.to}` : `${who} ${mine && !local ? 'take' : 'takes'} the ${PIECE[x.captured]} on ${x.to}`)
+      : (youLose ? `${who} holds ${x.to}. Your ${PIECE[x.piece]} is lost` : `${who} ${mine && !local ? 'hold' : 'holds'} ${x.to}. The ${PIECE[x.piece]} is lost`);
     const box = $('winfx');
     box.className = 'overlay winfx ' + (mine ? 'mine' : 'theirs');
     box.replaceChildren(h('div', { class: 'winbox' },
       h('div', { class: 'winpiece' }, pieceEl(color, piece)),
-      h('div', { class: 'wintext' }, 'WIN'),
+      h('div', { class: 'wintext' }, mine ? 'WIN' : 'LOSE'),
       h('div', { class: 'winsub' }, sub)));
     box.hidden = false;
     box.onclick = endWin;

@@ -43,6 +43,7 @@ export class Game {
     this.bufferMs = opts.bufferMs || 0;
     this.runoutFirstMs = opts.runoutFirstMs || 0;   // all-in: pause before the first street is dealt
     this.runoutStepMs = opts.runoutStepMs || 0;     // all-in: time between streets (0 = deal everything at once)
+    this.runoutRiverMs = opts.runoutRiverMs || 0;   // all-in: extra suspense before the river card (0 = same as runoutStepMs)
     this.runoutStallMs = opts.runoutStallMs || 0;   // all-in: pause on the full board before the result
     this.runoutAt = null;
     this.now = opts.now || (() => Date.now());
@@ -151,7 +152,7 @@ export class Game {
     this.hand.log.forEach((l) => this.say(l));
     // A short stack can be all-in from the blinds alone, which finishes the hand immediately.
     if (this.hand.done) { this.holdUntil = null; this._afterHand(); return; }
-    this._hold(this.dealMs + (mt.handNo === 1 ? this.captureMs + this.introMs : 0));
+    this._hold(this.dealMs + (mt.handNo === 1 ? this.captureMs + this.introMs : 0), mt.handNo === 1 ? 'setup' : 'deal');
     this._armTimer();
     if (this.hand.runout) this._startRunout(this.holdRemaining());   // all in from the blinds
   }
@@ -162,7 +163,7 @@ export class Game {
     this.runoutAt = this.now() + extra + this.runoutFirstMs;
   }
 
-  _hold(ms) { this.holdUntil = ms > 0 ? this.now() + ms : null; }
+  _hold(ms, kind = 'buffer') { this.holdUntil = ms > 0 ? this.now() + ms : null; this.holdTotal = ms > 0 ? ms : 0; this.holdKind = ms > 0 ? kind : null; }
 
   holdRemaining() { return this.holdUntil ? Math.max(0, this.holdUntil - this.now()) : 0; }
 
@@ -266,7 +267,7 @@ export class Game {
       P.runoutStep(h);
       for (const l of h.log.slice(logStart)) this.say(l);
       if (h.done) this._afterHand();
-      else this.runoutAt = t + (h.board.length >= 5 ? this.runoutStallMs : this.runoutStepMs);
+      else this.runoutAt = t + (h.board.length >= 5 ? this.runoutStallMs : h.board.length === 4 ? (this.runoutRiverMs || this.runoutStepMs) : this.runoutStepMs);
       return true;
     }
     if (this.advanceAt && t >= this.advanceAt) return this.advance().ok || changed;
@@ -424,6 +425,8 @@ export class Game {
       overtime: this._overtimeView(),
       overtimeTotal: this.overtimeMs,
       holdMs: this.holdRemaining(),
+      holdKind: this.holdRemaining() > 0 ? this.holdKind : null,
+      holdTotal: this.holdTotal || 0,
       captureMs: this.captureMs,
       introMs: this.introMs,
       log: this.log.slice(-40),
