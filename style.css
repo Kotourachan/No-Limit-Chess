@@ -308,3 +308,43 @@ button:disabled { cursor: not-allowed; filter: grayscale(0.6); }
 @keyframes bannerIn { from { opacity: 0; transform: translateX(-50%) scale(0.6); } to { opacity: 1; transform: translateX(-50%) scale(1); } }
 .introbox .skip { margin-top: 10px; }
 @media (prefers-reduced-motion: reduce) { .caparrow.fresh, .capbanner.fresh { animation: none; } }
+
+/* ---------- phones: compact table, dealer chip off the blinds, controls pinned ---------- */
+@media (max-width: 600px) {
+  .tablewrap { padding: 6px 8px 8px; gap: 6px; }
+  .capline { padding: 6px 10px; }
+  .capline .headline { font-size: 0.95rem; }
+  .capline .sub { display: none; }
+  .seatbox { padding: 6px 10px; border-radius: 10px; }
+  .seatbox .cardrow { margin-top: 4px; gap: 10px; }
+  .seatbox .card { width: 34px; height: 47px; }
+  .seatbox .r { font-size: 0.95rem; } .seatbox .s { font-size: 1rem; }
+  .timer { margin-top: 6px; height: 8px; }
+  .oval { min-height: 210px; margin: -16px 0; padding: 26px 4% 26px; border-width: 6px; gap: 2px; }
+  .oval .cards.board-cards { margin: 0 0 2px; gap: 4px; }
+  .oval .card { width: 30px; height: 42px; }
+  .oval .card .r { font-size: 0.8rem; } .oval .card .s { font-size: 0.85rem; }
+  .oval .blinds { gap: 4px; margin: 0 0 2px; }
+  .oval .blinds .tag { font-size: 0.6rem; padding: 1px 7px; }
+  .betspot { min-height: 34px; }
+  .spotbox { min-height: 30px; min-width: 96px; padding: 1px 8px; }
+  .spotbox .lbl { font-size: 0.68rem; }
+  .oval .potline { padding: 1px 10px; font-size: 0.85rem; }
+  .oval .resultbanner { margin-top: 2px; padding: 4px 8px; font-size: 0.8rem; }
+  .dealerchip { left: 17%; }
+  .dealerchip.top { top: 30px; }
+  .dealerchip.bottom { bottom: 30px; }
+  .dealerchip .d { width: 24px; height: 24px; font-size: 0.8rem; border-width: 2px; }
+  .dealerchip small { display: none; }
+  .ctl { flex-direction: row; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+  .ctl .turnmsg, .ctl .rangeinfo { display: none; }
+  .ctl .mainacts { order: 1; flex-wrap: nowrap; }
+  .ctl .quick { order: 2; margin-left: auto; }
+  .ctl input[type=range] { order: 3; width: 100%; margin: 0; height: 18px; }
+  .ctl .raiserow { order: 4; width: 100%; flex-wrap: nowrap; }
+  .ctl button { padding: 0.4em 0.8em; }
+  .ctl .amt { width: 4.2em; padding: 0.35em 0.5em; }
+  #t-actions { position: sticky; bottom: 0; z-index: 8; background: var(--bg); padding: 8px 0 6px; box-shadow: 0 -10px 10px var(--bg); }
+  #t-log { max-height: 90px; }
+  .topbar { padding: 6px 12px; }
+}

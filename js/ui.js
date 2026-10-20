@@ -368,7 +368,7 @@ export function createUI(cb) {
     const opp = other(me);
     const wrap = h('div', { class: 'ctl' + (held ? ' held' : '') });
     wrap.append(h('div', { class: 'turnmsg' }, held ? 'Your turn is coming up…' : 'Your action'));
-    const row = h('div', { class: 'btnrow' });
+    const row = h('div', { class: 'btnrow mainacts' });
     row.append(h('button', { class: 'danger', disabled: held, onclick: () => cb.onAction({ type: 'poker', kind: 'fold' }) }, 'Fold'));
     if (o.canCheck) row.append(h('button', { disabled: held, onclick: () => cb.onAction({ type: 'poker', kind: 'check' }) }, 'Check'));
     else row.append(h('button', { class: 'callbtn', disabled: held, onclick: () => cb.onAction({ type: 'poker', kind: 'call' }) },
@@ -399,7 +399,7 @@ export function createUI(cb) {
       wrap.append(
         h('div', { class: 'rangeinfo' }, `Minimum ${f(lo)} BB · maximum ${f(hi)} BB`),
         range, quick,
-        h('div', { class: 'btnrow' }, go, num, h('span', { class: 'unit' }, 'BB'), allin),
+        h('div', { class: 'btnrow raiserow' }, go, num, h('span', { class: 'unit' }, 'BB'), allin),
       );
     }
     return wrap;
