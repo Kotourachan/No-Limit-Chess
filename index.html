@@ -42,8 +42,8 @@
       <li>Normal chess until someone captures (the king just captures normally, no hand). A capture starts a heads-up poker mini-match.</li>
       <li>Each side starts the mini-match with 3 BB plus their piece's value: a bishop (3) taking a pawn (1) is 6 BB against 4 BB, and a bishop taking a queen (9) is 6 BB against 12 BB. Values: pawn 1, knight 3, bishop 3, rook 5, queen 9.</li>
       <li>Blinds are 0.5 / 1 BB. The capturer keeps the button for the whole exchange. Hands are played until one player is out of chips.</li>
-      <li>Win the mini-match and the capture stands. Lose it and the capture fails: pieces stay put and the move is spent. Recapturing on the same square works the same way, with the recapturer as the capturer.</li>
-      <li>The capturer must show their cards if called. The other player can muck a losing hand.</li>
+      <li>Win the mini-match and the capture stands. Lose it and your capturing piece is lost (the defender stays put) and your move is spent. Recapturing on the same square works the same way, with the recapturer as the capturer.</li>
+      <li>The capturer must show their cards if called. The other player can muck a losing hand. Every decision has a 10 second clock: run out and you check if it's free, otherwise you fold.</li>
       <li>No chips carry between captures. Checkmate (or the usual draws) ends the game. A capture made while in check is forced and skips the hand.</li>
     </ul>
   </details>
@@ -98,8 +98,6 @@
       <div id="me-bar" class="pbar"></div>
     </div>
     <aside class="right">
-      <div id="poker" class="panel" hidden></div>
-      <div id="lasthand" class="panel" hidden></div>
       <div id="log" class="panel log"></div>
     </aside>
   </main>
@@ -116,6 +114,34 @@
     </div>
   </div>
 </section>
+
+<section id="table" class="screen" hidden>
+  <header class="topbar">
+    <span id="t-status"></span>
+    <span id="t-room" class="roomtag"></span>
+    <span class="spacer"></span>
+    <button id="btn-resign-t" class="small danger">Resign</button>
+    <button id="btn-leave-t" class="small secondary">Leave</button>
+  </header>
+  <div id="t-notice" class="notice" hidden></div>
+  <main class="tablewrap">
+    <div id="t-capture" class="capline"></div>
+    <div class="oval-area">
+      <div id="seat-opp" class="seatslot top"></div>
+      <div class="oval">
+        <div id="t-blinds" class="blinds"></div>
+        <div id="t-board" class="cards board-cards"></div>
+        <div id="t-pot" class="potline"></div>
+        <div id="t-result" class="resultbanner" hidden></div>
+      </div>
+      <div id="seat-me" class="seatslot bottom"></div>
+    </div>
+    <div id="t-actions" class="actions"></div>
+    <div id="t-log" class="panel log"></div>
+  </main>
+</section>
+
+<div id="intro" class="overlay intro" hidden><div id="intro-box" class="introbox"></div></div>
 
 <div id="toast" class="toast" hidden></div>
 

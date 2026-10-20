@@ -29,6 +29,13 @@ const ui = createUI({
 
 function other(s) { return s === 'w' ? 'b' : 'w'; }
 
+// Finished hands stay on the table for a few seconds, every poker decision has a 10 second
+// clock (none in the local test), and the first decision of an exchange gets extra time for
+// the capture pop-up and the deal animation.
+function makeGame() {
+  return new Game({ manualAdvance: true, actionMs: mode === 'local' ? 0 : 10000, graceMs: 3600, pauseMs: 3400 });
+}
+
 // ---------- hosting ----------
 function startHosting() {
   mode = 'host';
@@ -54,7 +61,7 @@ function startHosting() {
 
 function newGame(color) {
   hostColor = color;
-  game = new Game();
+  game = makeGame();
 }
 
 function pushViews() {
@@ -100,13 +107,15 @@ function renderGuest() {
 // ---------- local test (one screen, both sides) ----------
 function startLocal() {
   mode = 'local';
-  game = new Game();
+  game = makeGame();
   renderLocal();
 }
 
+let localSeat = 'w';
 function actor() {
-  if (game.phase === 'poker' && game.hand) return game.hand.toAct;
-  return game.chess.turn();
+  const t = game.phase === 'poker' && game.hand ? game.hand.toAct : game.chess.turn();
+  if (t) localSeat = t; // between hands nobody acts: keep the same point of view
+  return localSeat;
 }
 
 function renderLocal() {
@@ -124,7 +133,7 @@ function startAi({ color, level }) {
 
 function startAiGame() {
   clearTimeout(aiTimer);
-  game = new Game();
+  game = makeGame();
   aiColor = other(humanColor);
   renderAi();
   scheduleAi();
@@ -145,7 +154,9 @@ function scheduleAi() {
   const thinking = aiToAct();
   ui.thinking(thinking);
   if (!thinking) return;
-  const delay = game.phase === 'poker' ? 700 + Math.random() * 600 : 350;
+  const hd = game.hand;
+  const fresh = hd && !hd.acts.w && !hd.acts.b; // first decision of a hand: let the cards land first
+  const delay = game.phase === 'poker' ? (fresh ? 3800 : 900 + Math.random() * 700) : 350;
   aiTimer = setTimeout(() => {
     if (mode !== 'ai' || !aiToAct()) return;
     if (game.phase === 'poker') {
@@ -180,6 +191,18 @@ function handleAction(a) {
     net.send({ t: 'act', action: a });
   }
 }
+
+// ---------- clock and hand pauses ----------
+function refresh() {
+  if (mode === 'host') pushViews();
+  else if (mode === 'ai') { renderAi(); scheduleAi(); }
+  else if (mode === 'local') renderLocal();
+}
+
+setInterval(() => {
+  if (!game || !mode || mode === 'guest') return; // the host (or local session) keeps time
+  if (game.tick()) refresh();
+}, 200);
 
 // ---------- boot ----------
 await loadSkin();

@@ -102,6 +102,7 @@ export function startHand({ stacks, button, initiator, ante = 0, sb, bb, rng }) 
     currentBet: 0,
     lastRaise: bb,
     toAct: button,
+    acts: { w: null, b: null }, // last action of each seat, shown at the table
     done: false,
     result: null,
     log: [],
@@ -217,6 +218,7 @@ export function act(h, seat, action) {
   if (kind === 'allin') kind = 'call';
 
   if (kind === 'fold') {
+    h.acts[seat] = { kind: 'fold', street: h.street };
     h.log.push(`${who} folds`);
     finish(h, { folder: seat });
     return { ok: true };
@@ -224,11 +226,13 @@ export function act(h, seat, action) {
   if (kind === 'check') {
     if (!o.canCheck) return { ok: false, error: "Can't check, there is a bet to call" };
     h.acted[seat] = true;
+    h.acts[seat] = { kind: 'check', street: h.street };
     h.log.push(`${who} checks`);
   } else if (kind === 'call') {
     const a = Math.min(o.callAmount, h.stacks[seat]);
     h.stacks[seat] -= a; h.bets[seat] += a; h.committed[seat] += a;
     h.acted[seat] = true;
+    h.acts[seat] = { kind: 'call', amount: a, allIn: h.stacks[seat] === 0, street: h.street };
     h.log.push(`${who} calls ${a}${h.stacks[seat] === 0 ? ' (all-in)' : ''}`);
   } else if (kind === 'raise') {
     if (!o.canRaise) return { ok: false, error: "Can't raise" };
@@ -239,6 +243,7 @@ export function act(h, seat, action) {
     h.stacks[seat] -= pay; h.bets[seat] += pay; h.committed[seat] += pay;
     if (to - h.currentBet >= h.lastRaise) h.lastRaise = to - h.currentBet;
     const verb = h.currentBet === 0 ? 'bets' : 'raises to';
+    h.acts[seat] = { kind: verb === 'bets' ? 'bet' : 'raise', to, allIn: h.stacks[seat] === 0, street: h.street };
     h.currentBet = to;
     h.acted[seat] = true;
     h.acted[opp] = false;

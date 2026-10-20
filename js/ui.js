@@ -1,10 +1,17 @@
 // Placeholder UI. Everything visual goes through skin.js so art can be dropped in later.
+// Screens: lobby, ai lobby, waiting, game (chess board), table (poker exchange).
+// When a capture starts, a pop-up shows both starting stacks, then the oval table appears.
 import { pieceEl, cardEl, emptyCardEl, squareBg } from './skin.js';
+import { RULES } from './rules.js';
 
 const $ = (id) => document.getElementById(id);
 const other = (s) => (s === 'w' ? 'b' : 'w');
 const NAME = { w: 'White', b: 'Black' };
 const PIECE = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' };
+const INTRO_MS = 2300;
+
+// Chip amounts are shown in big blinds everywhere, so stacks, bets and pot always agree.
+const fmt = (chips, bb) => String(Math.round((chips / bb) * 100) / 100);
 
 function h(tag, attrs = {}, ...kids) {
   const el = document.createElement(tag);
@@ -39,11 +46,17 @@ export function createUI(cb) {
   let lastView = null;
   let lastMeta = {};
   let toastTimer = null;
+  let seenExchange;                    // last exchange number announced (undefined until the first update)
+  let lastPly;                         // last chess ply drawn, to animate only new moves
+  let dealt = { id: null, board: 0 };  // what is already on the table, so only new cards animate
+  let prev = { id: null, acts: { w: '', b: '' }, bets: { w: 0, b: 0 }, pot: 0, doneShown: null };
+  let clock = null;                    // { end, total } for the visible countdown
+  let introFor = 0, introUntil = 0, introTimer = null;
 
-  const screens = ['lobby', 'waiting', 'game', 'ai'];
+  const screens = ['lobby', 'waiting', 'game', 'ai', 'table'];
   function show(name) { for (const s of screens) $(s).hidden = s !== name; }
 
-  // ---------- lobby wiring ----------
+  // ---------- wiring ----------
   $('btn-create').onclick = () => cb.onCreate();
   $('btn-join').onclick = () => cb.onJoin($('join-code').value);
   $('join-code').addEventListener('keydown', (e) => { if (e.key === 'Enter') cb.onJoin($('join-code').value); });
@@ -57,7 +70,10 @@ export function createUI(cb) {
   $('btn-cancel').onclick = () => cb.onLeave();
   $('btn-leave').onclick = () => cb.onLeave();
   $('btn-leave2').onclick = () => cb.onLeave();
-  $('btn-resign').onclick = () => { if (confirm('Resign this game?')) cb.onAction({ type: 'resign' }); };
+  $('btn-leave-t').onclick = () => cb.onLeave();
+  const resign = () => { if (confirm('Resign this game?')) cb.onAction({ type: 'resign' }); };
+  $('btn-resign').onclick = resign;
+  $('btn-resign-t').onclick = resign;
   $('btn-rematch').onclick = () => cb.onRematch();
   $('btn-copy').onclick = async () => {
     const url = $('share-link').value;
@@ -68,10 +84,21 @@ export function createUI(cb) {
     const t = $('toast');
     t.textContent = text; t.hidden = false;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => (t.hidden = true), 3500);
+    toastTimer = setTimeout(() => (t.hidden = true), 4000);
   }
 
-  // ---------- board ----------
+  // The 10 second clock under the player whose turn it is.
+  setInterval(() => {
+    const fill = $('t-fill');
+    if (!clock || !fill) return;
+    const left = Math.max(0, clock.end - Date.now());
+    fill.style.width = Math.min(100, (left / clock.total) * 100) + '%';
+    const sec = $('t-sec');
+    if (sec) sec.textContent = Math.min(Math.ceil(clock.total / 1000), Math.ceil(left / 1000)) + 's';
+    fill.parentElement.classList.toggle('low', left < 3000);
+  }, 100);
+
+  // ---------- chess board ----------
   function renderBoard(v, orientation) {
     const board = $('board');
     board.innerHTML = '';
@@ -84,8 +111,14 @@ export function createUI(cb) {
     const targets = new Map();
     if (selected) for (const m of v.legal) if (m.from === selected) targets.set(m.to, m);
     const hl = new Set();
-    if (v.pending) { hl.add(v.pending.from); hl.add(v.pending.to); }
-    else if (v.lastExchange) { hl.add(v.lastExchange.from); hl.add(v.lastExchange.to); }
+    const pend = new Set();
+    if (v.pending) { pend.add(v.pending.from); pend.add(v.pending.to); }
+    else if (v.lastMove) { hl.add(v.lastMove.from); if (v.lastMove.to) hl.add(v.lastMove.to); }
+
+    // animate only a move we have not drawn yet
+    const fresh = lastPly !== undefined && v.ply !== lastPly && v.lastMove;
+    const col = (sq) => (orientation === 'b' ? 7 - files.indexOf(sq[0]) : files.indexOf(sq[0]));
+    const row = (sq) => (orientation === 'b' ? Number(sq[1]) - 1 : 8 - Number(sq[1]));
 
     for (const r of rl) {
       for (const f of fl) {
@@ -94,10 +127,25 @@ export function createUI(cb) {
         const cell = h('div', { class: 'sq ' + (light ? 'light' : 'dark'), 'data-sq': sq });
         const bg = squareBg(light);
         if (bg) cell.style.backgroundImage = bg;
-        if (hl.has(sq)) cell.classList.add(v.pending ? 'pending' : 'lastmove');
+        if (hl.has(sq)) cell.classList.add('lastmove');
+        if (pend.has(sq)) cell.classList.add('pending');
         if (selected === sq) cell.classList.add('selected');
         const p = pieces[sq];
-        if (p) cell.append(pieceEl(p.color, p.type));
+        if (p) {
+          const pe = pieceEl(p.color, p.type);
+          if (fresh && !v.lastMove.lost && sq === v.lastMove.to) {
+            pe.classList.add('slide');
+            pe.style.setProperty('--dx', col(v.lastMove.from) - col(sq));
+            pe.style.setProperty('--dy', row(v.lastMove.from) - row(sq));
+          }
+          cell.append(pe);
+        }
+        // the attacker that lost its exchange: show it vanishing from where it stood
+        if (fresh && v.lastMove.lost && sq === v.lastMove.from && v.lastExchange && !v.lastExchange.stands) {
+          const ghost = pieceEl(v.lastExchange.color, v.lastExchange.piece);
+          ghost.classList.add('ghost');
+          cell.append(ghost);
+        }
         if (targets.has(sq)) {
           cell.classList.add(targets.get(sq).capture ? 'target-cap' : 'target');
           cell.append(h('div', { class: 'dot' }));
@@ -107,6 +155,7 @@ export function createUI(cb) {
         board.append(cell);
       }
     }
+    lastPly = v.ply;
   }
 
   function onSquare(v, sq, pieces, myTurn) {
@@ -123,138 +172,30 @@ export function createUI(cb) {
     renderBoard(v, lastMeta.orientation);
   }
 
-  // ---------- player bars ----------
   function bar(v, seat, label) {
     const el = h('div', { class: 'pbar-inner' });
     el.append(
       h('div', { class: 'who' }, h('span', { class: 'dot-color ' + (seat === 'w' ? 'wd' : 'bd') }), `${label} (${NAME[seat]})`,
         v.turn === seat && v.phase === 'chess' && !v.result ? h('span', { class: 'turn' }, ' to move') : null),
     );
-    if (v.hand) {
-      const behind = v.hand.stacks[seat];
-      const inPlay = behind + v.hand.bets[seat];
-      el.append(h('div', { class: 'stack' }, `${inPlay} chips`, h('span', { class: 'bbs' }, ` ${(inPlay / v.bb).toFixed(1)} BB`)));
-    }
     const cap = h('div', { class: 'caps' });
-    for (const t of v.captured[other(seat)]) { const c = h('span', { class: 'cap' }); c.append(pieceEl(other(seat), t)); cap.append(c); }
+    for (const t of v.captured[seat]) { const c = h('span', { class: 'cap' }); c.append(pieceEl(seat, t)); cap.append(c); }
     el.append(cap);
     return el;
   }
 
-  // ---------- poker panel ----------
-  function holeRow(v, seat, label) {
-    const row = h('div', { class: 'hole' });
-    const cards = v.hand.hole[seat];
-    row.append(h('div', { class: 'lbl' }, label));
-    const wrap = h('div', { class: 'cards' });
-    if (cards) cards.forEach((c) => wrap.append(cardEl(c)));
-    else { wrap.append(cardEl(null, { faceDown: true })); wrap.append(cardEl(null, { faceDown: true })); }
-    row.append(wrap);
-    if (v.hand.bets[seat] > 0) row.append(h('div', { class: 'bet' }, `bet ${v.hand.bets[seat]}`));
-    return row;
-  }
-
-  function renderPoker(v, meta) {
-    const box = $('poker');
-    box.innerHTML = '';
-    if (!v.hand) { box.hidden = true; return; }
-    box.hidden = false;
-    const hd = v.hand;
-    const p = v.pending;
-    const me = v.you, opp = other(me);
-    const who = (s) => (meta.mode === 'local' ? NAME[s] : s === me ? 'You' : (meta.oppName || 'Opponent'));
-
-    box.append(h('h3', {}, `Exchange hand ${hd.handNo} (${hd.street})`));
-    if (p) {
-      const st = p.startStacks;
-      box.append(h('p', { class: 'cap-line' },
-        `${NAME[p.color]}'s ${PIECE[p.piece]} takes ${NAME[other(p.color)]}'s ${PIECE[p.captured]} on ${p.to}${p.isRecapture ? ' (recapture)' : ''}. `,
-        `Mini-match: ${NAME[p.color]} ${(st[p.color] / v.bb)} BB vs ${NAME[other(p.color)]} ${(st[other(p.color)] / v.bb)} BB. Play hands until one player is out of chips. `,
-        `If ${NAME[p.color]} wins, the capture stands.`));
-      box.append(h('p', { class: 'meta' }, `Button: ${NAME[hd.button]} (capturer, shows if called) · blinds ${hd.sb / v.bb} / ${hd.bb / v.bb} BB`));
-    }
-    box.append(holeRow(v, opp, meta.mode === 'local' ? NAME[opp] : (meta.oppName || 'Opponent')));
-    const bd = h('div', { class: 'cards board-cards' });
-    for (let i = 0; i < 5; i++) bd.append(hd.board[i] != null ? cardEl(hd.board[i]) : emptyCardEl());
-    box.append(h('div', { class: 'potline' }, h('span', { class: 'pot' }, `Pot ${hd.pot}`)), bd);
-    box.append(holeRow(v, me, meta.mode === 'local' ? NAME[me] : 'You'));
-
-    const act = h('div', { class: 'actions' });
-    if (hd.toAct === me && hd.options) {
-      const o = hd.options;
-      act.append(h('div', { class: 'turnmsg' }, meta.mode === 'local' ? `${NAME[me]} to act` : 'Your action'));
-      const row = h('div', { class: 'btnrow' });
-      row.append(h('button', { class: 'danger', onclick: () => cb.onAction({ type: 'poker', kind: 'fold' }) }, 'Fold'));
-      if (o.canCheck) row.append(h('button', { onclick: () => cb.onAction({ type: 'poker', kind: 'check' }) }, 'Check'));
-      else row.append(h('button', { onclick: () => cb.onAction({ type: 'poker', kind: 'call' }) }, `Call ${o.callAmount}`));
-      act.append(row);
-      if (o.canRaise) {
-        const verb = hd.bets.w === 0 && hd.bets.b === 0 ? 'Bet' : 'Raise to';
-        const num = h('input', { type: 'number', min: o.minRaiseTo, max: o.maxRaiseTo, value: o.minRaiseTo, class: 'amt' });
-        const range = h('input', { type: 'range', min: o.minRaiseTo, max: o.maxRaiseTo, value: o.minRaiseTo, step: 1 });
-        range.addEventListener('input', () => (num.value = range.value));
-        num.addEventListener('input', () => (range.value = num.value));
-        const quick = h('div', { class: 'quick' });
-        const pot = hd.pot;
-        for (const [lbl, f] of [['½ pot', 0.5], ['pot', 1], ['2× pot', 2]]) {
-          quick.append(h('button', { class: 'small', onclick: () => {
-            const to = Math.round(hd.bets[opp] + (pot + o.callAmount) * f);
-            const val = Math.max(o.minRaiseTo, Math.min(o.maxRaiseTo, to));
-            num.value = val; range.value = val;
-          } }, lbl));
-        }
-        const row2 = h('div', { class: 'btnrow' },
-          h('button', { class: 'primary', onclick: () => cb.onAction({ type: 'poker', kind: 'raise', amount: Number(num.value) }) }, verb),
-          num,
-          h('button', { class: 'accent', onclick: () => cb.onAction({ type: 'poker', kind: 'allin' }) }, o.isAllInMax ? 'All-in' : `Max (${o.maxRaiseTo})`));
-        act.append(range, quick, row2);
-      }
-    } else {
-      act.append(h('div', { class: 'turnmsg wait' }, `Waiting for ${who(hd.toAct)}…`));
-    }
-    box.append(act);
-  }
-
-  function renderLastHand(v, meta) {
-    const box = $('lasthand');
-    box.innerHTML = '';
-    if (!v.lastHand) { box.hidden = true; return; }
-    box.hidden = false;
-    const lh = v.lastHand;
-    const ex = v.lastExchange;
-    box.append(h('h3', {}, 'Last hand'));
-    if (ex && !v.hand) box.append(h('p', { class: 'cap-line ' + (ex.stands ? 'stands' : 'fails') },
-      ex.stands ? `The capture on ${ex.to} stands.` : `The capture on ${ex.to} failed. Pieces stay put and ${NAME[ex.color]}'s move is spent.`));
-    box.append(h('p', { class: 'meta' }, lh.text));
-    const bd = h('div', { class: 'cards board-cards small' });
-    lh.board.forEach((c) => bd.append(cardEl(c)));
-    if (lh.board.length) box.append(bd);
-    for (const s of ['w', 'b']) {
-      if (lh.hole[s]) {
-        const r = h('div', { class: 'cards small' });
-        lh.hole[s].forEach((c) => r.append(cardEl(c)));
-        box.append(h('div', { class: 'lhrow' }, h('span', { class: 'lbl' }, NAME[s] + (lh.result.names[s] ? ` · ${lh.result.names[s]}` : '')), r));
-      }
-    }
-  }
-
-  // ---------- full update ----------
-  function update(v, meta) {
-    lastView = v; lastMeta = meta;
+  function renderChessScreen(v, meta) {
     show('game');
-    if (v.phase !== 'chess') selected = null;
     $('room-tag').textContent = meta.code ? `Room ${meta.code}` : meta.mode === 'local' ? 'Local test' : '';
     const opp = meta.mode === 'local' ? other(meta.orientation) : other(v.you);
     const me = meta.mode === 'local' ? meta.orientation : v.you;
     $('opp-bar').replaceChildren(bar(v, opp, meta.mode === 'local' ? NAME[opp] : (meta.oppName || 'Opponent')));
     $('me-bar').replaceChildren(bar(v, me, meta.mode === 'local' ? NAME[me] : 'You'));
     renderBoard(v, meta.orientation);
-    renderPoker(v, meta);
-    renderLastHand(v, meta);
 
     let status;
     if (v.result) status = 'Game over';
-    else if (v.phase === 'poker') status = 'Capture hand in progress';
+    else if (v.phase === 'poker') status = 'Capture!';
     else if (meta.mode === 'local') status = `${NAME[v.turn]} to move${v.inCheck ? ' (check)' : ''}`;
     else status = v.turn === v.you ? `Your move${v.inCheck ? ' (you are in check)' : ''}` : `${meta.oppName || 'Opponent'}'s move`;
     $('status').textContent = status;
@@ -274,12 +215,247 @@ export function createUI(cb) {
       else title = r.winner === v.you ? 'You win!' : 'You lose';
       $('go-title').textContent = title;
       $('go-detail').textContent = `By ${r.reason}.`;
-      $('btn-rematch').hidden = !(meta.mode === 'local' || meta.isHost);
-      $('go-wait').hidden = meta.mode === 'local' || meta.isHost;
+      $('btn-rematch').hidden = !(meta.mode === 'local' || meta.mode === 'ai' || meta.isHost);
+      $('go-wait').hidden = meta.mode === 'local' || meta.mode === 'ai' || meta.isHost;
     } else over.hidden = true;
 
     $('notice').textContent = meta.notice || '';
     $('notice').hidden = !meta.notice;
+
+    // announce how the last exchange ended
+    const ex = v.lastExchange;
+    if (!ex) seenExchange = 0;
+    else if (seenExchange === undefined) seenExchange = ex.no;
+    else if (ex.no !== seenExchange) {
+      seenExchange = ex.no;
+      toast(ex.stands
+        ? `${NAME[ex.color]}'s ${PIECE[ex.piece]} takes the ${PIECE[ex.captured]}.`
+        : `${NAME[ex.color]} lost the exchange. Their ${PIECE[ex.piece]} is gone.`);
+    }
+  }
+
+  // ---------- capture pop-up ----------
+  function renderIntro(v, meta) {
+    const p = v.pending, bb = v.bb;
+    const f = (c) => fmt(c, bb);
+    const local = meta.mode === 'local';
+    const me = v.you, opp = other(me);
+    const nm = (s) => (local ? NAME[s] : s === me ? 'You' : (meta.oppName || 'Opponent'));
+    const cap = p.color, def = other(p.color);
+    const pieceOf = (s) => (s === cap ? p.piece : p.captured);
+    const part = (s) => h('div', { class: 'stackcard' + (s === cap ? ' cap' : '') },
+      h('div', { class: 'who' }, nm(s), local ? null : h('span', { class: 'sub' }, ` (${NAME[s]})`)),
+      h('div', { class: 'big' }, `${f(p.startStacks[s])} BB`),
+      h('div', { class: 'brk' }, `${RULES.baseStackBB} base + ${RULES.pieceValues[pieceOf(s)]} for the ${PIECE[pieceOf(s)]}`),
+      s === cap ? h('div', { class: 'role' }, 'attacker · button') : h('div', { class: 'role' }, 'defender'));
+    $('intro-box').replaceChildren(
+      h('div', { class: 'kicker' }, p.isRecapture ? 'Recapture!' : 'Capture!'),
+      h('div', { class: 'line' }, `${NAME[cap]}'s ${PIECE[p.piece]} takes ${NAME[def]}'s ${PIECE[p.captured]} on ${p.to}`),
+      h('div', { class: 'versus' }, part(me), h('span', { class: 'vs' }, 'vs'), part(opp)),
+      h('div', { class: 'foot' }, `Poker hands until one side is out of chips. If ${NAME[cap]} loses, the ${PIECE[p.piece]} is lost.`),
+    );
+  }
+
+  // ---------- poker table ----------
+  function actText(a, f) {
+    if (!a) return '';
+    const t = a.kind === 'fold' ? 'Fold'
+      : a.kind === 'check' ? 'Check'
+      : a.kind === 'call' ? `Call ${f(a.amount)} BB`
+      : a.kind === 'bet' ? `Bet ${f(a.to)} BB`
+      : `Raise to ${f(a.to)} BB`;
+    return t + (a.allIn ? ' · all-in' : '');
+  }
+
+  function buildControls(v, hd, me) {
+    const bb = v.bb;
+    const f = (c) => fmt(c, bb);
+    const o = hd.options;
+    const opp = other(me);
+    const wrap = h('div', { class: 'ctl' });
+    wrap.append(h('div', { class: 'turnmsg' }, 'Your action'));
+    const row = h('div', { class: 'btnrow' });
+    row.append(h('button', { class: 'danger', onclick: () => cb.onAction({ type: 'poker', kind: 'fold' }) }, 'Fold'));
+    if (o.canCheck) row.append(h('button', { onclick: () => cb.onAction({ type: 'poker', kind: 'check' }) }, 'Check'));
+    else row.append(h('button', { class: 'callbtn', onclick: () => cb.onAction({ type: 'poker', kind: 'call' }) },
+      `Call ${f(o.callAmount)} BB` + (o.callAmount >= hd.stacks[me] ? ' (all-in)' : '')));
+    wrap.append(row);
+
+    if (o.canRaise) {
+      const lo = o.minRaiseTo, hi = o.maxRaiseTo;
+      const clamp = (c) => Math.max(lo, Math.min(hi, Math.round(c)));
+      const verb = hd.bets.w === 0 && hd.bets.b === 0 ? 'Bet' : 'Raise to';
+      const range = h('input', { type: 'range', min: lo, max: hi, value: lo, step: 1 });
+      const num = h('input', { type: 'number', min: lo / bb, max: hi / bb, step: 0.5, value: lo / bb, class: 'amt', inputmode: 'decimal' });
+      const setTo = (c) => { const x = clamp(c); range.value = x; num.value = x / bb; return x; };
+      range.addEventListener('input', () => { num.value = Number(range.value) / bb; });
+      num.addEventListener('input', () => { const c = Number(num.value) * bb; if (Number.isFinite(c)) range.value = clamp(c); });
+      num.addEventListener('change', () => setTo(Number(num.value) * bb || lo));
+      num.addEventListener('blur', () => setTo(Number(num.value) * bb || lo));
+      const quick = h('div', { class: 'quick' });
+      for (const [lbl, fr] of [['½ pot', 0.5], ['pot', 1], ['2× pot', 2]]) {
+        quick.append(h('button', { class: 'small', onclick: () => setTo(hd.bets[opp] + (hd.pot + o.callAmount) * fr) }, lbl));
+      }
+      const go = h('button', { class: 'primary', onclick: () => {
+        const c = setTo(Number(num.value) * bb || lo);
+        cb.onAction({ type: 'poker', kind: 'raise', amount: c });
+      } }, verb);
+      const allin = h('button', { class: 'accent', onclick: () => cb.onAction({ type: 'poker', kind: 'allin' }) }, `All-in ${f(hi)} BB`);
+      wrap.append(
+        h('div', { class: 'rangeinfo' }, `Minimum ${f(lo)} BB · maximum ${f(hi)} BB`),
+        range, quick,
+        h('div', { class: 'btnrow' }, go, num, h('span', { class: 'unit' }, 'BB'), allin),
+      );
+    }
+    return wrap;
+  }
+
+  function renderTable(v, meta) {
+    const hd = v.hand, p = v.pending, bb = v.bb;
+    const local = meta.mode === 'local';
+    const me = v.you, opp = other(me);
+    const oppName = meta.oppName || 'Opponent';
+    const nm = (s) => (local ? NAME[s] : s === me ? 'You' : oppName);
+    const f = (c) => fmt(c, bb);
+    const newHand = hd.id !== dealt.id;
+    const pv = hd.id === prev.id ? prev : { id: hd.id, acts: { w: '', b: '' }, bets: { w: 0, b: 0 }, pot: 0, doneShown: null };
+
+    $('t-status').textContent = hd.done ? 'Hand finished' : `Exchange hand ${hd.handNo} · ${hd.street}`;
+    $('t-room').textContent = meta.code ? `Room ${meta.code}` : local ? 'Local test' : '';
+    $('btn-resign-t').hidden = !!v.result || local;
+    $('t-notice').textContent = meta.notice || '';
+    $('t-notice').hidden = !meta.notice;
+
+    const st = p.startStacks, cap = p.color, def = other(p.color);
+    $('t-capture').replaceChildren(
+      h('div', { class: 'headline' }, `${NAME[cap]}'s ${PIECE[p.piece]} takes ${NAME[def]}'s ${PIECE[p.captured]} on ${p.to}${p.isRecapture ? ' (recapture)' : ''}`),
+      h('div', { class: 'sub' }, `Stacks: ${NAME[cap]} ${f(st[cap])} BB, ${NAME[def]} ${f(st[def])} BB. If ${NAME[cap]} loses, the ${PIECE[p.piece]} is lost.`),
+    );
+
+    const nextActs = { w: JSON.stringify(hd.acts.w), b: JSON.stringify(hd.acts.b) };
+    function seatEl(seat, isMe) {
+      const role = seat === hd.button ? 'SB' : 'BB';
+      const acting = hd.toAct === seat && !hd.done;
+      const a = hd.acts[seat];
+      const stale = a && a.street !== hd.street;
+      const fresh = a && nextActs[seat] !== pv.acts[seat];
+      const actLabel = acting ? (isMe ? 'Your turn' : (meta.mode === 'ai' ? 'Thinking…' : 'Deciding…')) : actText(a, f);
+      const head = h('div', { class: 'seathead' },
+        h('span', { class: 'nm' }, nm(seat)),
+        local ? null : h('span', { class: 'tag col' }, NAME[seat]),
+        seat === hd.button ? h('span', { class: 'tag dealer', title: 'Dealer button' }, 'D') : null,
+        h('span', { class: 'tag blind' }, `${role} ${f(role === 'SB' ? hd.sb : hd.bb)}`),
+        h('span', { class: 'act' + (acting ? ' now' : '') + (stale && !acting ? ' old' : '') + (fresh && !acting ? ' fresh' : '') }, actLabel),
+      );
+      const cards = hd.hole[seat];
+      const wrap = h('div', { class: 'cards' });
+      const reveal = hd.done && cards && !isMe && !local && pv.doneShown !== hd.id; // opponent's cards turning over
+      for (let i = 0; i < 2; i++) {
+        const el = cards ? cardEl(cards[i]) : cardEl(null, { faceDown: true });
+        if (newHand) { el.classList.add('deal'); el.style.animationDelay = (i * 2 + (isMe ? 1 : 0)) * 0.18 + 's'; }
+        else if (reveal) { el.classList.add('flip'); el.style.animationDelay = i * 0.12 + 's'; }
+        wrap.append(el);
+      }
+      const stackbox = h('div', { class: 'stackbox' },
+        h('div', { class: 'stk' }, `${f(hd.stacks[seat])} BB`),
+        h('div', { class: 'sub' }, 'stack'));
+      const betNew = hd.bets[seat] > 0 && hd.bets[seat] !== pv.bets[seat];
+      const bet = hd.bets[seat] > 0 ? h('div', { class: 'betchip' + (betNew ? ' fresh' : '') }, `bet ${f(hd.bets[seat])} BB`) : null;
+      const kids = [head, h('div', { class: 'cardrow' }, wrap, stackbox, bet)];
+      if (acting && v.actionMs > 0) {
+        kids.push(h('div', { class: 'timer' }, h('div', { id: 't-fill', class: 'fill' }), h('span', { id: 't-sec', class: 'sec' })));
+      }
+      const won = hd.done && hd.result.winner === seat;
+      return h('div', { class: 'seatbox' + (acting ? ' acting' : '') + (won ? ' won' : '') }, ...kids);
+    }
+    $('seat-opp').replaceChildren(seatEl(opp, false));
+    $('seat-me').replaceChildren(seatEl(me, true));
+
+    // the oval between the players: blinds, board, pot, result
+    const sbSeat = hd.button, bbSeat = other(hd.button);
+    $('t-blinds').replaceChildren(
+      h('span', { class: 'tag blind' }, `Small blind ${f(hd.sb)} BB · ${nm(sbSeat)}`),
+      h('span', { class: 'tag blind' }, `Big blind ${f(hd.bb)} BB · ${nm(bbSeat)}`),
+    );
+    const prevBoard = hd.id === dealt.id ? dealt.board : 0;
+    const bd = $('t-board');
+    bd.replaceChildren();
+    for (let i = 0; i < 5; i++) {
+      if (hd.board[i] != null) {
+        const c = cardEl(hd.board[i]);
+        if (i >= prevBoard) { c.classList.add('deal'); c.style.animationDelay = (i - prevBoard) * 0.15 + 's'; }
+        bd.append(c);
+      } else bd.append(emptyCardEl());
+    }
+    const potEl = $('t-pot');
+    potEl.textContent = `Pot ${f(hd.pot)} BB`;
+    if (hd.pot !== pv.pot) { potEl.classList.remove('bump'); void potEl.offsetWidth; potEl.classList.add('bump'); }
+
+    const rb = $('t-result');
+    if (hd.done) {
+      const r = hd.result;
+      let l1;
+      if (r.winner === 'tie') l1 = `Split pot, ${f(r.pot)} BB`;
+      else {
+        l1 = `${nm(r.winner)} ${(local || r.winner !== me) ? 'wins' : 'win'} ${f(r.pot)} BB`;
+        l1 += r.reason === 'showdown' ? ` with ${r.names[r.winner]}` : ` (${nm(other(r.winner))} folded)`;
+      }
+      const l2 = hd.matchOver
+        ? (hd.matchStands ? `Exchange over: ${NAME[cap]}'s ${PIECE[p.piece]} takes the ${PIECE[p.captured]}.` : `Exchange over: ${NAME[cap]}'s ${PIECE[p.piece]} is lost.`)
+        : 'Next hand coming up…';
+      rb.replaceChildren(h('div', { class: 'l1' }, l1), h('div', { class: 'l2' }, l2));
+      rb.hidden = false;
+    } else rb.hidden = true;
+
+    const act = $('t-actions');
+    act.replaceChildren();
+    if (!hd.done && hd.toAct === me && hd.options) act.append(buildControls(v, hd, me));
+    else if (!hd.done) act.append(h('div', { class: 'turnmsg wait' }, `Waiting for ${nm(hd.toAct)}…`));
+
+    const log = $('t-log');
+    log.replaceChildren(...v.log.slice(-6).map((l) => h('div', { class: 'logline' }, l)));
+    log.scrollTop = log.scrollHeight;
+
+    clock = (!hd.done && hd.toAct && v.actionMs > 0) ? { end: Date.now() + v.actionMs, total: v.actionTotal || 10000 } : null;
+    dealt = { id: hd.id, board: hd.board.length };
+    prev = { id: hd.id, acts: nextActs, bets: { ...hd.bets }, pot: hd.pot, doneShown: hd.done ? hd.id : null };
+  }
+
+  // ---------- full update ----------
+  function hideIntro() {
+    clearTimeout(introTimer);
+    introUntil = 0;
+    $('intro').hidden = true;
+  }
+
+  function update(v, meta) {
+    lastView = v; lastMeta = meta;
+    if (v.phase === 'poker' && v.hand) {
+      selected = null;
+      if (introFor !== v.exchangeNo) {
+        // a new capture: pop-up with both stacks over the board, then the table
+        introFor = v.exchangeNo;
+        introUntil = Date.now() + INTRO_MS;
+        clearTimeout(introTimer);
+        introTimer = setTimeout(() => { hideIntro(); if (lastView) update(lastView, lastMeta); }, INTRO_MS);
+      }
+      if (Date.now() < introUntil) {
+        renderChessScreen(v, meta);
+        renderIntro(v, meta);
+        $('intro').hidden = false;
+        return;
+      }
+      hideIntro();
+      show('table');
+      renderTable(v, meta);
+      return;
+    }
+    hideIntro();
+    introFor = 0;
+    clock = null;
+    dealt = { id: null, board: 0 };
+    prev = { id: null, acts: { w: '', b: '' }, bets: { w: 0, b: 0 }, pot: 0, doneShown: null };
+    renderChessScreen(v, meta);
   }
 
   return {
@@ -292,9 +468,9 @@ export function createUI(cb) {
       $('share-link').value = code ? `${base}?join=${code}` : 'Creating room…';
       $('wait-status').textContent = code ? 'Waiting for your friend to join…' : 'Contacting the connection broker…';
     },
-    thinking(on) { $('status').dataset.thinking = on ? '1' : ''; },
     showConnecting(text) { show('waiting'); $('room-code').textContent = ''; $('share-link').value = ''; $('wait-status').textContent = text; },
     fillJoinCode(c) { $('join-code').value = c; },
+    thinking(on) { $('status').dataset.thinking = on ? '1' : ''; },
     update,
     refresh() { if (lastView) update(lastView, lastMeta); },
   };

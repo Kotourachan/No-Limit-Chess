@@ -33,14 +33,28 @@ All numbers are in `js/rules.js`.
   piece just captured. Bishop (3) takes pawn (1): capturer 6 BB, defender 4 BB. Bishop takes queen (9): 6 BB vs 12 BB. Pawn takes pawn: 4 BB each. There is no extra bonus for the difference in value. Values: pawn 1, knight 3, bishop 3, rook 5, queen 9.
 - **Blinds:** 0.5 / 1 BB (BB = 10 chips in the code). The capturer (initiator) keeps the button for every hand of the exchange.
   The button player posts the small blind and acts first preflop and last after the flop.
-- **Hands repeat until one player is out of chips.** If the capturer wins the mini-match the capture stands. If they lose, the capture fails:
-  pieces stay put and the capturer's move is spent (the turn passes).
+- **Hands repeat until one player is out of chips.** If the capturer wins the mini-match the capture stands. If they lose, the capturing
+  piece is lost (the defender stays where it was) and the move is spent. One edge case: a pinned piece that takes its pinner and then loses
+  leaves its own king exposed, and that loses the game on the spot.
 - **Recapture:** capturing on the square your opponent just captured on is just another exchange, with the recapturer as the capturer
   (so the recapturer gets the button).
 - **Showdown:** the capturer must show if called; the defender can muck a losing hand. If someone folds, nobody shows.
+- **Clock:** every poker decision has 10 seconds (the first one of an exchange gets a few extra seconds for the pop-up and the deal).
+  Run out of time and you check if that is free, otherwise you fold. There is no clock in Local test.
 - **King:** captures by the king are automatic. They skip the poker and just happen. A capture made while you're in check is also forced
   and skips the hand.
 - Game ends on checkmate, stalemate or draw rules, or resignation. Pawns auto-promote to queens for now.
+
+## What you see
+
+- **Capture pop-up:** when someone takes a piece, a short pop-up shows both starting stacks (3 BB base plus the piece value), then the
+  board gives way to the poker table.
+- **Poker table:** an oval table with the two players on opposite sides, everything in big blinds. Each seat shows the dealer button,
+  its blind (SB 0.5 or BB 1), the player's last action, their stack right next to their cards, and their current bet. The blinds are
+  also written on the table between the players. The player to act has a highlighted seat and a countdown bar.
+- Finished hands stay on the table for a few seconds (showdown cards turn over, result banner) before the next hand or the board.
+- Animations: cards are dealt in, actions pop in, the pot bumps when it changes, chess pieces slide, and a lost attacker vanishes.
+  They switch off if the system asks for reduced motion.
 
 ## Art
 
@@ -55,4 +69,3 @@ npm test         # engine tests, 60 random full games, and AI-vs-AI games (takes
 
 Libraries vendored in `vendor/`: chess.js 1.4.0 and PeerJS 1.5.5 (so the site has no CDN dependencies).
 Game logic (`js/rules.js`, `js/poker.js`, `js/game.js`) has no UI or network code. `js/net.js` is the only file that knows about PeerJS.
-
