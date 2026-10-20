@@ -49,6 +49,14 @@ export class Game {
     this.now = opts.now || (() => Date.now());
     this.chess = new Chess();
     this.phase = 'chess'; // 'chess' | 'poker' | 'over'
+    this.moveMs = opts.moveMs || 0;        // chess clock per move
+    this.moveOtMs = opts.moveOtMs || 0;    // extra time on that move once the clock runs out, then forfeit
+    this.startMs = opts.startMs || 0;      // the 1, 2, 3, GO! countdown before anyone can move
+    this.startAt = this.startMs > 0 ? this.now() + this.startMs : null;
+    this.startId = Math.random();
+    this.chessDeadline = null;
+    this.chessMode = 'main';
+    this._armChess();
     this.kingOnly = null; // set after a failed capture while in check: that side must now move its king
     this.pending = null;  // the capture being fought over
     this.match = null;    // { capturer, stacks, button, handNo }
@@ -92,6 +100,8 @@ export class Game {
     this.phase = 'over';
     this.result = { winner, reason };
     this.deadline = null;
+    this.chessDeadline = null;
+    this.runoutAt = null;
     this.advanceAt = null;
     this.say(winner === 'draw' ? `Game drawn (${reason})` : `${NAME[winner]} wins by ${reason}`);
   }
@@ -102,7 +112,17 @@ export class Game {
     else if (c.isGameOver()) this._end('draw', c.isStalemate() ? 'stalemate' : 'draw rule');
   }
 
+  startRemaining() { return this.startAt ? Math.max(0, this.startAt - this.now()) : 0; }
+
+  // The chess clock for whoever is to move starts when the countdown ends (or right away).
+  _armChess() {
+    this.chessMode = 'main';
+    if (!this.moveMs || this.phase !== 'chess') { this.chessDeadline = null; return; }
+    this.chessDeadline = Math.max(this.now(), this.startAt || 0) + this.moveMs;
+  }
+
   _move(seat, { from, to, promotion }) {
+    if (this.startRemaining() > 0) return { ok: false, error: 'The game starts in a moment' };
     if (this.phase !== 'chess') return { ok: false, error: 'A poker hand is in progress' };
     if (this.chess.turn() !== seat) return { ok: false, error: 'Not your turn' };
     const cands = this.chess.moves({ square: from, verbose: true }).filter((m) => m.to === to);
@@ -132,6 +152,7 @@ export class Game {
     const st = exchangeStacks(m.piece, m.captured, R);
     const stacks = { [seat]: st.attacker, [other(seat)]: st.defender };
     this.exchangeNo++;
+    this.chessDeadline = null;
     this.ot = { w: this.overtimeMs, b: this.overtimeMs };
     this.pending = {
       from: m.from, to: m.to, promotion: m.promotion, san: m.san, color: seat,
@@ -262,6 +283,19 @@ export class Game {
     const t = this.now();
     let changed = false;
     if (this.holdUntil && t >= this.holdUntil) { this.holdUntil = null; changed = true; }
+    if (this.startAt && t >= this.startAt) { this.startAt = null; changed = true; }
+    if (this.phase === 'chess' && this.chessDeadline && t >= this.chessDeadline) {
+      const seat = this.chess.turn();
+      if (this.chessMode === 'main' && this.moveOtMs > 0) {
+        this.chessMode = 'ot';
+        this.chessDeadline += this.moveOtMs;
+        this.say(`${NAME[seat]} is in overtime (${Math.round(this.moveOtMs / 1000)}s)`);
+        return true;
+      }
+      this.say(`${NAME[seat]} ran out of time and forfeits`);
+      this._end(other(seat), 'time');
+      return true;
+    }
     if (this.runoutAt && t >= this.runoutAt && this.hand && this.hand.runout && !this.hand.done) {
       const h = this.hand, logStart = h.log.length;
       P.runoutStep(h);
@@ -286,14 +320,14 @@ export class Game {
     return changed;
   }
 
-  // The player to act ran out of time (and overtime): check if free, otherwise fold.
+  // The player to act ran out of time and has no overtime left: they forfeit the game.
   timeout() {
     if (this.phase !== 'poker' || !this.hand || this.hand.done) return { ok: false, error: 'No decision pending' };
     const seat = this.hand.toAct;
-    const o = P.options(this.hand, seat);
-    this.say(`${NAME[seat]} ran out of time`);
+    this.say(`${NAME[seat]} ran out of time and forfeits`);
     this.ot[seat] = 0;
-    return this._poker(seat, { kind: o.canCheck ? 'check' : 'fold' }, { force: true });
+    this._end(other(seat), 'time');
+    return { ok: true };
   }
 
   _commit(seat, m) {
@@ -304,6 +338,7 @@ export class Game {
     this.lastCapture = mv.captured ? { square: mv.to, by: seat, ply: this.ply } : null;
     if (mv.captured) this.captured[other(seat)].push(mv.captured);
     this._checkEnd();
+    if (this.phase === 'chess') this._armChess();
   }
 
   // A failed capture: the capturing piece is removed from the board, the defender stays put,
@@ -332,6 +367,7 @@ export class Game {
       }
       this.kingOnly = p.color;
       this.say(`${NAME[p.color]} is still in check: the king must move`);
+      this._armChess();
       return;
     }
     // If that piece was shielding its own king (a pinned piece that took its pinner), the
@@ -342,6 +378,7 @@ export class Game {
       return;
     }
     this._checkEnd();
+    if (this.phase === 'chess') this._armChess();
   }
 
   _kingAttacked(color) {
@@ -424,6 +461,11 @@ export class Game {
       clockMode: this.clockMode,
       overtime: this._overtimeView(),
       overtimeTotal: this.overtimeMs,
+      startMs: this.startRemaining(),
+      startId: this.startId,
+      chessMs: this.phase === 'chess' && this.chessDeadline ? Math.max(0, this.chessDeadline - this.now()) : 0,
+      chessTotal: this.chessMode === 'ot' ? this.moveOtMs : this.moveMs,
+      chessMode: this.chessMode,
       holdMs: this.holdRemaining(),
       holdKind: this.holdRemaining() > 0 ? this.holdKind : null,
       holdTotal: this.holdTotal || 0,

@@ -1,6 +1,6 @@
 // Synthesised sound effects (Web Audio). No audio files, so nothing to download or host.
 // Usage: Sound.play('chip', delayMs?). Sounds are scheduled on the audio clock, so a delay is exact.
-// Names: move, capture, alert, deal, flip, chip, dealer, check, fold, win, lose, tie.
+// Names: buzz, beep, go, move, capture, alert, deal, flip, chip, dealer, check, fold, win, lose, tie.
 
 let ctx = null, master = null, noiseBuf = null;
 let muted = false;
@@ -110,6 +110,20 @@ const SOUNDS = {
   fold(t) {
     noise(t, { dur: 0.22, type: 'bandpass', f0: 3800, f1: 900, q: 0.8, vol: 0.34, attack: 0.02 });
     noise(t + 0.16, { dur: 0.03, f0: 1500, q: 0.8, vol: 0.18 });
+  },
+  // overtime: two harsh buzzes
+  buzz(t) {
+    for (const dt of [0, 0.22]) {
+      tone(t + dt, { f0: 150, f1: 140, dur: 0.18, type: 'sawtooth', vol: 0.3 });
+      tone(t + dt, { f0: 225, f1: 210, dur: 0.18, type: 'square', vol: 0.1 });
+      noise(t + dt, { dur: 0.16, type: 'bandpass', f0: 500, q: 0.6, vol: 0.12 });
+    }
+  },
+  // countdown
+  beep(t) { tone(t, { f0: 660, dur: 0.14, type: 'triangle', vol: 0.32 }); },
+  go(t) {
+    [784, 988, 1175].forEach((f, i) => tone(t + i * 0.03, { f0: f, dur: 0.4, type: 'triangle', vol: 0.2 }));
+    noise(t, { dur: 0.2, type: 'bandpass', f0: 600, f1: 3500, q: 1, vol: 0.2, attack: 0.05 });
   },
   win(t) {
     [523.25, 659.25, 783.99].forEach((f, i) => tone(t + i * 0.1, { f0: f, dur: 0.35, type: 'triangle', vol: 0.22 }));

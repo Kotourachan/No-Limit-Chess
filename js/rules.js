@@ -25,6 +25,9 @@ export const RULES = {
 
   // Timing, all in milliseconds.
   timing: {
+    moveMs: 20000,        // chess: time to make a move
+    moveOtMs: 30000,      // chess: extra time on that move once it runs out, then forfeit
+    startMs: 3800,        // 1, 2, 3, GO! before the game starts
     captureMs: 2500,      // arrow + "CAPTURE" on the board, then the pop-up
     introMs: 12300,       // the "Capture!" pop-up with both stacks
     dealMs: 3400,         // cards dealt and blinds posted at the start of every hand

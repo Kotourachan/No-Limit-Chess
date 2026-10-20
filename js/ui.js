@@ -120,6 +120,8 @@ export function createUI(cb) {
   let lastPly;                       // last chess ply drawn, to animate only new moves
   const blankPrev = () => ({ id: null, acts: { w: '', b: '' }, bets: { w: 0, b: 0 }, stacks: null, pot: 0, street: 'preflop', doneShown: null, sweepNo: 0, oppShown: false });
   let prev = blankPrev();            // what the table showed last time, so only changes animate
+  let buzzKey = '';                  // so the overtime buzz plays once per decision
+  let chessClock = null;             // { end, total, mode } for the move timer under the player to move
   let setup = null;                  // { end, total } while the exchange is still setting up
   let clock = null;                  // { end, total, mode } for the visible countdown
   let introFor = 0, introUntil = 0, arrowUntil = 0, introTimer = null, introTimer2 = null, introBuilt = 0, skippedFor = 0, arrowFor = 0;
@@ -144,7 +146,9 @@ export function createUI(cb) {
   $('btn-leave').onclick = () => cb.onLeave();
   $('btn-leave2').onclick = () => cb.onLeave();
   $('btn-leave-t').onclick = () => cb.onLeave();
-  const resign = () => { if (confirm('Resign this game?')) cb.onAction({ type: 'resign' }); };
+  const resign = () => { $('confirm').hidden = false; };
+  $('btn-forfeit-yes').onclick = () => { $('confirm').hidden = true; cb.onAction({ type: 'resign' }); };
+  $('btn-forfeit-no').onclick = () => { $('confirm').hidden = true; };
   const sndBtns = [...document.querySelectorAll('.sndbtn')];
   const paintSnd = () => sndBtns.forEach((b) => { b.textContent = Sound.isMuted() ? '🔇' : '🔊'; b.title = Sound.isMuted() ? 'Sound off (tap to turn on)' : 'Sound on (tap to mute)'; });
   sndBtns.forEach((b) => { b.onclick = () => { Sound.setMuted(!Sound.isMuted()); paintSnd(); }; });
@@ -170,6 +174,16 @@ export function createUI(cb) {
       const left = Math.max(0, setup.end - Date.now());
       const f = $('t-setup-fill'); if (f) f.style.width = Math.min(100, (left / setup.total) * 100) + '%';
       const l = $('t-setup-label'); if (l) l.textContent = `Setting up the exchange… ${Math.ceil(left / 1000)}s`;
+    }
+    const cf = $('c-fill');
+    if (chessClock && cf) {
+      const left = Math.max(0, chessClock.end - Date.now());
+      const shown = Math.min(left, chessClock.total);
+      cf.style.width = Math.min(100, (shown / chessClock.total) * 100) + '%';
+      const cs = $('c-sec');
+      if (cs) cs.textContent = (chessClock.mode === 'ot' ? 'Overtime ' : '') + Math.ceil(shown / 1000) + 's';
+      cf.parentElement.classList.toggle('low', shown < 5000);
+      cf.parentElement.classList.toggle('ot', chessClock.mode === 'ot');
     }
     const fill = $('t-fill');
     if (!clock || !fill) return;
@@ -283,6 +297,10 @@ export function createUI(cb) {
       h('div', { class: 'who' }, h('span', { class: 'dot-color ' + (seat === 'w' ? 'wd' : 'bd') }), `${label} (${NAME[seat]})`,
         v.turn === seat && v.phase === 'chess' && !v.result ? h('span', { class: 'turn' }, ' to move') : null),
     );
+    if (v.turn === seat && v.phase === 'chess' && !v.result && v.chessMs > 0 && v.chessTotal > 0) {
+      el.append(h('div', { class: 'movetimer' + (v.chessMode === 'ot' ? ' ot' : '') },
+        h('div', { class: 'fill', id: 'c-fill' }), h('span', { class: 'sec', id: 'c-sec' })));
+    }
     const cap = h('div', { class: 'caps' });
     for (const t of v.captured[seat]) { const c = h('span', { class: 'cap' }); c.append(pieceEl(seat, t)); cap.append(c); }
     el.append(cap);
@@ -296,6 +314,12 @@ export function createUI(cb) {
     const me = meta.mode === 'local' ? meta.orientation : v.you;
     $('opp-bar').replaceChildren(bar(v, opp, meta.mode === 'local' ? NAME[opp] : (meta.oppName || 'Opponent')));
     $('me-bar').replaceChildren(bar(v, me, meta.mode === 'local' ? NAME[me] : 'You'));
+    if (v.phase === 'chess' && !v.result && v.chessMode === 'ot' && (meta.mode === 'local' || v.turn === v.you)) {
+      const key = 'c' + v.ply + (v.kingOnly || '');
+      if (buzzKey !== key) { buzzKey = key; Sound.play('buzz'); }
+    }
+    chessClock = v.phase === 'chess' && !v.result && v.chessMs > 0 && v.chessTotal > 0
+      ? { end: Date.now() + v.chessMs, total: v.chessTotal, mode: v.chessMode } : null;
     renderBoard(v, meta.orientation);
 
     let status;
@@ -304,7 +328,7 @@ export function createUI(cb) {
     else if (meta.mode === 'local') status = v.kingOnly ? `${NAME[v.turn]}'s king must move` : `${NAME[v.turn]} to move${v.inCheck ? ' (check)' : ''}`;
     else status = v.turn === v.you ? (v.kingOnly ? 'Your king must move (still in check)' : `Your move${v.inCheck ? ' (you are in check)' : ''}`) : `${meta.oppName || 'Opponent'}'s move`;
     $('status').textContent = status;
-    $('btn-resign').hidden = !!v.result || meta.mode === 'local';
+    $('btn-resign').hidden = !!v.result;
 
     const log = $('log');
     log.replaceChildren(...v.log.map((l) => h('div', { class: 'logline' }, l)));
@@ -319,7 +343,7 @@ export function createUI(cb) {
       else if (meta.mode === 'local') title = `${NAME[r.winner]} wins`;
       else title = r.winner === v.you ? 'You win!' : 'You lose';
       $('go-title').textContent = title;
-      $('go-detail').textContent = `By ${r.reason}.`;
+      $('go-detail').textContent = r.reason === 'time' ? 'The clock ran out.' : r.reason === 'resignation' ? 'By forfeit.' : `By ${r.reason}.`;
       $('btn-rematch').hidden = !(meta.mode === 'local' || meta.mode === 'ai' || meta.isHost);
       $('go-wait').hidden = meta.mode === 'local' || meta.mode === 'ai' || meta.isHost;
     } else over.hidden = true;
@@ -445,7 +469,7 @@ export function createUI(cb) {
 
     $('t-status').textContent = hd.done ? 'Hand finished' : `Exchange hand ${hd.handNo} · ${hd.street}`;
     $('t-room').textContent = meta.code ? `Room ${meta.code}` : local ? 'Local test' : '';
-    $('btn-resign-t').hidden = !!v.result || local;
+    $('btn-resign-t').hidden = !!v.result;
     $('t-notice').textContent = meta.notice || '';
     $('t-notice').hidden = !meta.notice;
 
@@ -608,6 +632,10 @@ export function createUI(cb) {
     log.replaceChildren(...v.log.slice(-6).map((l) => h('div', { class: 'logline' }, l)));
     log.scrollTop = log.scrollHeight;
 
+    if (!hd.done && v.clockMode === 'ot' && hd.toAct === me && v.actionMs > 0) {
+      const key = `p${v.exchangeNo}:${hd.id}:${hd.street}:${nextActs.w}${nextActs.b}`;
+      if (buzzKey !== key) { buzzKey = key; Sound.play('buzz'); }
+    }
     setup = v.holdKind === 'setup' && v.holdMs > 0 && !hd.done ? { end: Date.now() + v.holdMs, total: v.holdTotal || v.holdMs } : null;
     $('t-setup').hidden = !setup;
     clock = (!hd.done && hd.toAct && v.actionMs > 0) ? { end: Date.now() + v.actionMs, total: v.actionTotal || 20000, mode: v.clockMode } : null;
@@ -675,8 +703,31 @@ export function createUI(cb) {
     winTimer = setTimeout(endWin, WIN_MS);
   }
 
+  // 1, 2, 3, GO! when a game begins
+  let cdFor = 0, cdEnd = 0, cdTotal = 0, cdShown = '', cdTimer = null;
+  function cdTick() {
+    const box = $('countdown');
+    const left = cdEnd - Date.now();
+    if (left <= 0) { clearInterval(cdTimer); cdTimer = null; box.hidden = true; return; }
+    const GO_MS = 800;
+    const label = left <= GO_MS ? 'GO!' : String(Math.min(3, Math.floor((cdTotal - left) / ((cdTotal - GO_MS) / 3)) + 1));
+    if (label !== cdShown) {
+      cdShown = label;
+      box.replaceChildren(h('div', { class: 'cdnum' + (label === 'GO!' ? ' go' : '') }, label));
+      Sound.play(label === 'GO!' ? 'go' : 'beep');
+    }
+  }
+  function startCountdown(ms) {
+    cdEnd = Date.now() + ms; cdTotal = ms; cdShown = '';
+    $('countdown').hidden = false;
+    clearInterval(cdTimer);
+    cdTimer = setInterval(cdTick, 60);
+    cdTick();
+  }
+
   function update(v, meta) {
     lastView = v; lastMeta = meta;
+    if (v.startMs > 0 && v.startId !== cdFor) { cdFor = v.startId; startCountdown(v.startMs); }
     if (v.phase !== 'poker' && wasTable && introFor && v.lastExchange && v.lastExchange.no === introFor && winShownFor !== introFor) {
       winShownFor = introFor;
       hideIntro();

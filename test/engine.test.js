@@ -321,24 +321,14 @@ test('2 second buffer after every decision, and the next clock starts after it',
   assert.ok(g.apply('b', { type: 'poker', kind: 'call' }).ok);
 });
 
-test('action clock: out of time checks when free, folds when facing a bet', () => {
+test('action clock: running out of time with no overtime forfeits the game', () => {
   let t = 0;
   const g = new Game({ rng: mulberry(8), manualAdvance: true, actionMs: 10000, pauseMs: 3000, now: () => t });
   capturePawn(g);
   t += 10001;
-  assert.equal(g.tick(), true);                  // white (small blind) faces 5 more: times out -> folds
-  assert.equal(g.hand.result.winner, 'b');
-  assert.deepEqual(g.hand.acts.w.kind, 'fold');
-  const g2 = new Game({ rng: mulberry(8), manualAdvance: true, actionMs: 10000, pauseMs: 3000, now: () => t });
-  capturePawn(g2);
-  g2.apply('w', { type: 'poker', kind: 'call' });
-  assert.equal(g2.hand.toAct, 'b');
-  t += 10001;
-  assert.equal(g2.tick(), true);
-  assert.equal(g2.hand.acts.b.kind, 'check');    // free to check, so no fold
-  assert.equal(g2.hand.street, 'flop');
-  assert.equal(g2.hand.sweep.from, 'preflop');   // the street's bets were swept into the pot
-  assert.deepEqual(g2.hand.sweep.bets, { w: 10, b: 10 });
+  assert.equal(g.tick(), true);                  // white (small blind) has no overtime: forfeits
+  assert.equal(g.phase, 'over');
+  assert.deepEqual(g.result, { winner: 'b', reason: 'time' });
 });
 
 test('overtime: 30s bank per player is used after the clock, drains, and refills every exchange', () => {
@@ -361,25 +351,17 @@ test('overtime: 30s bank per player is used after the clock, drains, and refills
   v = g.viewFor('b');
   assert.equal(v.clockMode, 'main');                    // black starts on the normal clock again
   assert.equal(v.actionTotal, 10000);
-  // black burns the clock and the whole bank
+  // black burns the clock and the whole bank: that is a forfeit
   t += 10001; assert.equal(g.tick(), true);
   assert.equal(g.viewFor('b').clockMode, 'ot');
   t += 30001; assert.equal(g.tick(), true);
-  assert.equal(g.hand.acts.b.kind, 'check');            // free to check once everything ran out
+  assert.equal(g.phase, 'over');
+  assert.deepEqual(g.result, { winner: 'w', reason: 'time' });
   assert.equal(g.ot.b, 0);
   // a new exchange gives everyone a full bank again
   const g2 = mk();
   capturePawn(g2);
   assert.deepEqual(g2.ot, { w: 30000, b: 30000 });
-  // finish the first exchange: banks refill for the next capture
-  let guard = 0;
-  while (g.phase === 'poker' && guard++ < 500) {
-    if (g.hand.done) { t += 3001; g.tick(); continue; }
-    const s = g.hand.toAct;
-    g.apply(s, { type: 'poker', kind: P.options(g.hand, s).canCheck ? 'check' : 'call' });
-    t += 2100; g.tick();
-  }
-  assert.equal(g.phase, 'chess');
 });
 
 test('views carry each seat last action, blinds positions and BB size', () => {
@@ -470,4 +452,37 @@ test('failed escape from check with the king boxed in is checkmate', () => {
   foldAlways(g, 'w');
   assert.equal(g.phase, 'over');
   assert.deepEqual(g.result, { winner: 'b', reason: 'checkmate' });
+});
+
+test('chess clock: 20s per move, then overtime, then forfeit; resets after each move', () => {
+  let t = 0;
+  const g = new Game({ rng: mulberry(3), now: () => t, moveMs: 20000, moveOtMs: 30000 });
+  assert.equal(g.viewFor('w').chessMs, 20000);
+  t += 19000; assert.equal(g.tick(), false);
+  assert.ok(g.apply('w', { type: 'move', from: 'e2', to: 'e4' }).ok);
+  assert.equal(g.viewFor('b').chessMs, 20000);          // black's clock starts fresh
+  t += 20001; assert.equal(g.tick(), true);
+  let v = g.viewFor('b');
+  assert.equal(v.chessMode, 'ot');
+  assert.equal(v.chessTotal, 30000);
+  assert.ok(v.chessMs > 29900);
+  t += 15000;
+  assert.ok(g.apply('b', { type: 'move', from: 'e7', to: 'e5' }).ok);   // still in time
+  assert.equal(g.viewFor('w').chessMode, 'main');       // overtime does not carry over
+  t += 20001; g.tick(); t += 30001;
+  assert.equal(g.tick(), true);
+  assert.equal(g.phase, 'over');
+  assert.deepEqual(g.result, { winner: 'b', reason: 'time' });
+});
+
+test('start countdown: nobody can move until it ends, and the clock starts after it', () => {
+  let t = 0;
+  const g = new Game({ rng: mulberry(3), now: () => t, moveMs: 20000, startMs: 3800 });
+  assert.equal(g.viewFor('w').startMs, 3800);
+  assert.equal(g.apply('w', { type: 'move', from: 'e2', to: 'e4' }).ok, false);
+  t += 3000;
+  assert.equal(g.viewFor('w').chessMs, 20800);          // clock runs from the end of the countdown
+  t += 801; g.tick();
+  assert.equal(g.viewFor('w').startMs, 0);
+  assert.ok(g.apply('w', { type: 'move', from: 'e2', to: 'e4' }).ok);
 });

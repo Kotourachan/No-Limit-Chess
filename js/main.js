@@ -37,6 +37,9 @@ function makeGame() {
   const local = mode === 'local';
   return new Game({
     manualAdvance: true,
+    moveMs: local ? 0 : T.moveMs,
+    moveOtMs: local ? 0 : T.moveOtMs,
+    startMs: T.startMs,
     actionMs: local ? 0 : T.actionMs,
     overtimeMs: local ? 0 : T.overtimeMs,
     captureMs: local ? 1500 : T.captureMs,
@@ -170,11 +173,11 @@ function scheduleAi() {
   ui.thinking(thinking);
   if (!thinking) return;
   // wait out the pop-up / deal / the move just made, then think for a moment
-  const wait = game.phase === 'poker' ? game.holdRemaining() : 0;
+  const wait = game.phase === 'poker' ? game.holdRemaining() : game.startRemaining();
   const think = game.phase === 'poker' ? 800 + Math.random() * 700 : 350;
   aiTimer = setTimeout(() => {
     if (mode !== 'ai' || !aiToAct()) return;
-    if (game.phase === 'poker' && game.holdRemaining() > 0) { scheduleAi(); return; }
+    if ((game.phase === 'poker' && game.holdRemaining() > 0) || (game.phase !== 'poker' && game.startRemaining() > 0)) { scheduleAi(); return; }
     if (game.phase === 'poker') {
       const a = choosePokerAction(game, aiColor, aiLevel);
       game.apply(aiColor, { type: 'poker', ...a });

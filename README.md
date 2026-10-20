@@ -45,8 +45,12 @@ All numbers are in `js/rules.js`.
 - **Pop-up and table:** after the pop-up (or a skip), then a separate oval table (the board is hidden).
   The dealer chip sits by the dealer. Blinds come out of the stacks, bets slide to the felt, and the pot sweeps to the winner.
   Chips are drawn one chip per BB.
-- **Clocks:** 20 s per decision, then a **30 s overtime bank per player per exchange** (refills for every new exchange, not shared).
-  Running out means check if free, otherwise fold. After every decision there is a 2 s pause where the move is highlighted on the player's card.
+- **Chess clock:** 20 s per move. Miss it and you get **30 s of overtime on that move** (it does not carry over); miss that and you **forfeit the game**.
+  A **1, 2, 3, GO!** countdown starts every game, and the clocks start after it.
+- **Poker clocks:** 20 s per decision, then a **30 s overtime bank per player per exchange** (refills for every new exchange, not shared).
+  Use up the clock and the whole bank and you **forfeit the game**.
+- **Overtime feedback:** a double buzz plays when your overtime starts (chess or poker) and the timer shakes slightly.
+- **Forfeit button:** in the top bar of both the board and the poker table (with a confirmation); your opponent wins. After every decision there is a 2 s pause where the move is highlighted on the player's card.
 - **All-in run-out:** once both players are all in, both hands are turned up and the board is dealt in steps: 2 s after the last action the flop
   comes out quickly, the turn 1.2 s later, then a longer 2.4 s pause before the river, then 3.4 s on the full board before the result.
 - **End of the exchange:** the winning piece grows to fill the screen with a big WIN (3 s, tap to skip), or LOSE in red when your opponent won, then the board returns.

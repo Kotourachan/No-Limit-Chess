@@ -45,7 +45,7 @@
       <li>Blinds are 0.5 / 1 BB. The capturer is the dealer for the whole exchange. Hands are played until one player is out of chips.</li>
       <li>Win the mini-match and the capture stands. Lose it and your capturing piece is lost (the defender stays put) and your move is spent. Recapturing on the same square works the same way, with the recapturer as the capturer.</li>
       <li>The capturer must show their cards if called. The other player can muck a losing hand.</li>
-      <li>Every decision has a 20 second clock. When it runs out you use your 30 second overtime bank (a fresh one every exchange). With both used up you check if it's free, otherwise you fold. After every decision the table pauses for 2 seconds so you can see the move and the chips.</li>
+      <li>Chess moves have a 20 second clock, then 30 seconds of overtime on that move, then you forfeit. Poker decisions have a 20 second clock, then a 30 second overtime bank (a fresh one every exchange); use it all up and you forfeit the game. After every poker decision the table pauses for 2 seconds so you can see the move and the chips.</li>
       <li>No chips carry between captures. Checkmate (or the usual draws) ends the game. Only the king captures for free. If you're in check and capture with another piece, you still have to win the hand. Lose it and you stay in check, but you get one more move: the king has to move. If it can't, that's checkmate.</li>
     </ul>
   </details>
@@ -90,7 +90,7 @@
     <span id="room-tag" class="roomtag"></span>
     <span class="spacer"></span>
     <button class="small secondary sndbtn">🔊</button>
-    <button id="btn-resign" class="small danger">Resign</button>
+    <button id="btn-resign" class="small danger">Forfeit</button>
     <button id="btn-leave" class="small secondary">Leave</button>
   </header>
   <div id="notice" class="notice" hidden></div>
@@ -124,7 +124,7 @@
     <span id="t-room" class="roomtag"></span>
     <span class="spacer"></span>
     <button class="small secondary sndbtn">🔊</button>
-    <button id="btn-resign-t" class="small danger">Resign</button>
+    <button id="btn-resign-t" class="small danger">Forfeit</button>
     <button id="btn-leave-t" class="small secondary">Leave</button>
   </header>
   <div id="t-notice" class="notice" hidden></div>
@@ -151,6 +151,17 @@
 
 <div id="intro" class="overlay intro" hidden><div id="intro-box" class="introbox"></div></div>
 
+<div id="confirm" class="overlay" hidden>
+  <div class="modal">
+    <h2>Forfeit the game?</h2>
+    <p>You will lose and your opponent wins.</p>
+    <div class="btnrow">
+      <button id="btn-forfeit-yes" class="danger">Forfeit</button>
+      <button id="btn-forfeit-no" class="secondary">Keep playing</button>
+    </div>
+  </div>
+</div>
+<div id="countdown" class="overlay countdown" hidden></div>
 <div id="winfx" class="overlay winfx" hidden></div>
 <div id="fx" class="fx" aria-hidden="true"></div>
 
