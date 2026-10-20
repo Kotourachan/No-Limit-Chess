@@ -39,6 +39,7 @@ function makeGame() {
     manualAdvance: true,
     actionMs: local ? 0 : T.actionMs,
     overtimeMs: local ? 0 : T.overtimeMs,
+    captureMs: local ? 1500 : T.captureMs,
     introMs: local ? 4000 : T.introMs,
     dealMs: T.dealMs,
     bufferMs: local ? 800 : T.bufferMs,

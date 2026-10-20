@@ -116,7 +116,7 @@ export function createUI(cb) {
   const blankPrev = () => ({ id: null, acts: { w: '', b: '' }, bets: { w: 0, b: 0 }, stacks: null, pot: 0, street: 'preflop', doneShown: null });
   let prev = blankPrev();            // what the table showed last time, so only changes animate
   let clock = null;                  // { end, total, mode } for the visible countdown
-  let introFor = 0, introUntil = 0, introTimer = null, introBuilt = 0;
+  let introFor = 0, introUntil = 0, arrowUntil = 0, introTimer = null, introTimer2 = null, introBuilt = 0, skippedFor = 0, arrowFor = 0;
 
   const screens = ['lobby', 'waiting', 'game', 'ai', 'table'];
   function show(name) { for (const s of screens) $(s).hidden = s !== name; }
@@ -220,6 +220,24 @@ export function createUI(cb) {
         cell.addEventListener('click', () => onSquare(v, sq, pieces, myTurn));
         board.append(cell);
       }
+    }
+    if (v.pending && Date.now() < arrowUntil) {
+      const fresh0 = arrowFor !== v.exchangeNo;
+      arrowFor = v.exchangeNo;
+      const x1 = col(v.pending.from) + 0.5, y1 = row(v.pending.from) + 0.5;
+      const x2 = col(v.pending.to) + 0.5, y2 = row(v.pending.to) + 0.5;
+      const len = Math.hypot(x2 - x1, y2 - y1) || 1;
+      const ux = (x2 - x1) / len, uy = (y2 - y1) / len;
+      const NS = 'http://www.w3.org/2000/svg';
+      const svg = document.createElementNS(NS, 'svg');
+      svg.setAttribute('viewBox', '0 0 8 8');
+      svg.setAttribute('class', 'caparrow' + (fresh0 ? ' fresh' : ''));
+      const sx = x1 + ux * 0.3, sy = y1 + uy * 0.3, ex = x2 - ux * 0.55, ey = y2 - uy * 0.55;
+      const px = -uy, py = ux;
+      svg.innerHTML = `<line x1="${sx}" y1="${sy}" x2="${ex}" y2="${ey}" class="shaft"/>`
+        + `<polygon class="head" points="${x2 - ux * 0.15},${y2 - uy * 0.15} ${ex + px * 0.32},${ey + py * 0.32} ${ex - px * 0.32},${ey - py * 0.32}"/>`;
+      board.append(svg);
+      board.append(h('div', { class: 'capbanner' + (fresh0 ? ' fresh' : '') }, 'CAPTURE'));
     }
     lastPly = v.ply;
   }
@@ -327,7 +345,8 @@ export function createUI(cb) {
       h('div', { class: 'versus' }, part(me), h('span', { class: 'vs' }, 'vs'), part(opp)),
       h('div', { class: 'foot' }, `One chip is one BB. Poker hands until one side is out of chips. If ${NAME[cap]} loses, the ${PIECE[p.piece]} is lost.`),
       h('div', { class: 'introbar' }, h('div', { class: 'fill', style: `animation-duration:${v.introMs}ms` })),
-      h('div', { class: 'foot' }, 'The table opens in a moment…'),
+      h('div', { class: 'foot' }, 'The table opens when the timer ends, or skip ahead. The clock keeps running either way.'),
+      h('button', { class: 'accent skip', onclick: () => { skippedFor = v.exchangeNo; $('intro').hidden = true; if (lastView) update(lastView, lastMeta); } }, 'Skip to the table'),
     );
   }
 
@@ -577,8 +596,8 @@ export function createUI(cb) {
 
   // ---------- full update ----------
   function hideIntro() {
-    clearTimeout(introTimer);
-    introUntil = 0;
+    clearTimeout(introTimer); clearTimeout(introTimer2);
+    introUntil = 0; arrowUntil = 0;
     $('intro').hidden = true;
   }
 
@@ -587,15 +606,25 @@ export function createUI(cb) {
     if (v.phase === 'poker' && v.hand) {
       selected = null;
       if (introFor !== v.exchangeNo) {
-        // a new capture: pop-up with both stacks over the board, then the table
+        // a new capture: arrow + CAPTURE on the board, then the pop-up with both stacks, then the table
         introFor = v.exchangeNo;
         introBuilt = 0;
-        const ms = v.introMs || 0;
-        introUntil = ms > 0 ? Date.now() + ms : 0;
-        clearTimeout(introTimer);
-        if (ms > 0) introTimer = setTimeout(() => { hideIntro(); if (lastView) update(lastView, lastMeta); }, ms);
+        skippedFor = 0;
+        const cms = v.captureMs || 0, ms = v.introMs || 0;
+        arrowUntil = cms > 0 ? Date.now() + cms : 0;
+        introUntil = ms > 0 ? Date.now() + cms + ms : 0;
+        clearTimeout(introTimer); clearTimeout(introTimer2);
+        const again = () => { if (lastView) update(lastView, lastMeta); };
+        if (cms > 0) introTimer2 = setTimeout(again, cms);
+        if (ms > 0) introTimer = setTimeout(() => { hideIntro(); again(); }, cms + ms);
       }
-      if (Date.now() < introUntil) {
+      if (skippedFor !== v.exchangeNo && Date.now() < arrowUntil) {
+        $('intro').hidden = true;
+        show('game');
+        renderChessScreen(v, meta);
+        return;
+      }
+      if (skippedFor !== v.exchangeNo && Date.now() < introUntil) {
         renderChessScreen(v, meta);
         if (introBuilt !== v.exchangeNo) { renderIntro(v, meta); introBuilt = v.exchangeNo; }
         $('intro').hidden = false;

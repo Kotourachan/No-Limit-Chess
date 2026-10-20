@@ -63,7 +63,7 @@ input { font: inherit; background: #101216; color: var(--text); border: 1px soli
 .cap { width: 20px; height: 20px; display: inline-flex; align-items: center; justify-content: center; font-size: 17px; }
 .cap .piece-glyph { font-size: 17px; }
 
-#board { display: grid; grid-template-columns: repeat(8, var(--sq)); grid-template-rows: repeat(8, var(--sq)); border-radius: 6px; overflow: hidden; user-select: none; }
+#board { position: relative; display: grid; grid-template-columns: repeat(8, var(--sq)); grid-template-rows: repeat(8, var(--sq)); border-radius: 6px; overflow: hidden; user-select: none; }
 .sq { position: relative; display: flex; align-items: center; justify-content: center; background-size: cover; cursor: default; }
 .sq.light { background-color: var(--light); }
 .sq.dark { background-color: var(--dark); }
@@ -296,3 +296,15 @@ button:disabled { cursor: not-allowed; filter: grayscale(0.6); }
   .chip.arriving, .spotbox .lbl.late, .dealerchip.slide .d, .resultbanner, .introbar .fill { animation: none; }
   .leaving, .potpilebox .collect { animation: none; }
 }
+
+/* capture arrow + banner */
+.caparrow { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 6; overflow: visible; filter: drop-shadow(0 0 6px rgba(255, 190, 40, 0.95)); }
+.caparrow .shaft { stroke: #ffc531; stroke-width: 0.2; stroke-linecap: round; }
+.caparrow .head { fill: #ffc531; }
+.caparrow.fresh { animation: arrowIn 0.45s ease-out both; }
+.capbanner { position: absolute; left: 50%; top: 2%; transform: translateX(-50%); z-index: 7; pointer-events: none; padding: 0.15em 0.7em; border-radius: 10px; background: rgba(20, 14, 4, 0.82); border: 3px solid #ffc531; color: #ffc531; font-weight: 900; font-size: clamp(1.2rem, 6vw, 2rem); letter-spacing: 0.14em; text-shadow: 0 0 12px rgba(255, 190, 40, 0.8); }
+.capbanner.fresh { animation: bannerIn 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.3) both; }
+@keyframes arrowIn { from { opacity: 0; clip-path: inset(0 100% 0 0); } to { opacity: 1; clip-path: inset(0 0 0 0); } }
+@keyframes bannerIn { from { opacity: 0; transform: translateX(-50%) scale(0.6); } to { opacity: 1; transform: translateX(-50%) scale(1); } }
+.introbox .skip { margin-top: 10px; }
+@media (prefers-reduced-motion: reduce) { .caparrow.fresh, .capbanner.fresh { animation: none; } }

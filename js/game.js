@@ -14,6 +14,7 @@
 //   overtimeMs     extra time bank per player, refilled at the start of every exchange. It is
 //                  used once the decision clock runs out. Out of both: the player checks if
 //                  that is free, otherwise folds.
+//   captureMs      the arrow + CAPTURE banner on the board, before the pop-up.
 //   introMs        the capture pop-up. Nobody can act during it (first hand of an exchange).
 //   dealMs         deal animation and blinds at the start of every hand. Nobody can act.
 //   bufferMs       pause after every decision so the move and the chips can be seen. The
@@ -36,6 +37,7 @@ export class Game {
     this.actionMs = opts.actionMs || 0;
     this.overtimeMs = opts.overtimeMs || 0;
     this.pauseMs = opts.pauseMs == null ? 3200 : opts.pauseMs;
+    this.captureMs = opts.captureMs || 0;
     this.introMs = opts.introMs || 0;
     this.dealMs = opts.dealMs || 0;
     this.bufferMs = opts.bufferMs || 0;
@@ -143,7 +145,7 @@ export class Game {
     this.hand.log.forEach((l) => this.say(l));
     // A short stack can be all-in from the blinds alone, which finishes the hand immediately.
     if (this.hand.done) { this.holdUntil = null; this._afterHand(); return; }
-    this._hold(this.dealMs + (mt.handNo === 1 ? this.introMs : 0));
+    this._hold(this.dealMs + (mt.handNo === 1 ? this.captureMs + this.introMs : 0));
     this._armTimer();
   }
 
@@ -284,6 +286,7 @@ export class Game {
   _loseCapturer(p) {
     const c = this.chess;
     const opp = other(p.color);
+    const wasInCheck = c.inCheck();
     c.remove(p.from);
     this.captured[p.color].push(p.piece);
     const parts = c.fen().split(' ');
@@ -297,8 +300,8 @@ export class Game {
     // If that piece was shielding its own king (a pinned piece that took its pinner), the
     // king is now en prise on the opponent's move.
     if (this._kingAttacked(p.color)) {
-      this.say(`${NAME[p.color]}'s king is exposed and falls`);
-      this._end(opp, 'king exposed');
+      this.say(wasInCheck ? `${NAME[p.color]} lost the exchange while in check: checkmate` : `${NAME[p.color]}'s king is exposed and falls`);
+      this._end(opp, wasInCheck ? 'checkmate' : 'king exposed');
       return;
     }
     this._checkEnd();
@@ -382,6 +385,7 @@ export class Game {
       overtime: this._overtimeView(),
       overtimeTotal: this.overtimeMs,
       holdMs: this.holdRemaining(),
+      captureMs: this.captureMs,
       introMs: this.introMs,
       log: this.log.slice(-40),
       bb: this.rules.bb,

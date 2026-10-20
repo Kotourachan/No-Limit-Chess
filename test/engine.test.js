@@ -399,3 +399,22 @@ test('views carry each seat last action, blinds positions and BB size', () => {
   assert.equal(v.hand.lastActor, 'w');
   assert.equal(v.hand.sweep, null);              // nothing swept yet this hand
 });
+
+test('in check: a non-king capture plays a hand; losing it leaves the king in check and loses the game', () => {
+  const g = new Game({ rng: mulberry(4) });
+  g.chess.load('4k3/8/8/8/8/8/4q3/3QK3 w - - 0 1'); // Qd1xe2 escapes check
+  assert.ok(g.chess.inCheck());
+  assert.ok(g.apply('w', { type: 'move', from: 'd1', to: 'e2' }).ok);
+  assert.equal(g.phase, 'poker');                        // a hand is played, not free
+  foldAlways(g, 'w');
+  assert.equal(g.phase, 'over');
+  assert.deepEqual(g.result, { winner: 'b', reason: 'checkmate' });
+});
+
+test('in check: the king captures for free', () => {
+  const g = new Game({ rng: mulberry(4) });
+  g.chess.load('4k3/8/8/8/8/8/3q4/4K3 w - - 0 1'); // Kxd2 is legal (queen unprotected)
+  assert.ok(g.chess.inCheck());
+  assert.ok(g.apply('w', { type: 'move', from: 'e1', to: 'd2' }).ok);
+  assert.notEqual(g.phase, 'poker');
+});

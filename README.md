@@ -36,9 +36,12 @@ All numbers are in `js/rules.js`.
   (small blind, acts first preflop, last after).
 - Capturer wins or splits the mini-match: the capture stands. Capturer loses: the **capturing piece is lost**, the defender stays put and the
   turn passes. A pinned piece that loses exposes its king and loses the game.
-- King captures and captures made while in check are automatic (no hand).
+- **King captures are automatic** (no hand). Any other piece must win the exchange, even when capturing to escape check:
+  if it loses, the capturing piece is lost, the check stands and the king falls.
 - The capturer must show at showdown. The defender may muck a losing hand.
-- **Pop-up and table:** a capture first shows a ~12 s pop-up with both stacks, then a separate oval table (the board is hidden).
+- **Capture sequence:** a glowing arrow and a CAPTURE banner appear on the board for 2.5 s, then a ~12 s pop-up with both stacks.
+  Each player can press **Skip to the table** on their own screen; the shared timer keeps running, so nobody can act early and the other player can keep reading.
+- **Pop-up and table:** after the pop-up (or a skip), then a separate oval table (the board is hidden).
   The dealer chip sits by the dealer. Blinds come out of the stacks, bets slide to the felt, and the pot sweeps to the winner.
   Chips are drawn one chip per BB.
 - **Clocks:** 20 s per decision, then a **30 s overtime bank per player per exchange** (refills for every new exchange, not shared).

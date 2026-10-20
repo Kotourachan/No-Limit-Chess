@@ -19,11 +19,13 @@ export const RULES = {
   // The king plays normal chess: any king capture just happens, with no hand.
   kingCapturesAutomatic: true,
 
-  // Captures made while in check are forced, so they also skip the hand.
-  forcedCapturesSkipHand: true,
+  // Only the king captures for free. A non-king piece that captures to escape check still has to
+  // win the exchange; if it loses, the check stands and the king falls.
+  forcedCapturesSkipHand: false,
 
   // Timing, all in milliseconds.
   timing: {
+    captureMs: 2500,      // arrow + "CAPTURE" on the board, then the pop-up
     introMs: 12300,       // the "Capture!" pop-up with both stacks
     dealMs: 2800,         // cards dealt and blinds posted at the start of every hand
     bufferMs: 2000,       // pause after every decision so the move and the chips can be seen
