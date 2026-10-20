@@ -43,6 +43,9 @@ function makeGame() {
     introMs: local ? 4000 : T.introMs,
     dealMs: T.dealMs,
     bufferMs: local ? 800 : T.bufferMs,
+    runoutFirstMs: T.runoutFirstMs,
+    runoutStepMs: T.runoutStepMs,
+    runoutStallMs: T.runoutStallMs,
     pauseMs: T.pauseMs,
   });
 }

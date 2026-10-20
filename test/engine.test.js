@@ -402,7 +402,7 @@ test('views carry each seat last action, blinds positions and BB size', () => {
 
 test('in check: a non-king capture plays a hand; losing it leaves the king in check and loses the game', () => {
   const g = new Game({ rng: mulberry(4) });
-  g.chess.load('4k3/8/8/8/8/8/4q3/3QK3 w - - 0 1'); // Qd1xe2 escapes check
+  g.chess.load('4k3/8/8/8/8/3p4/4q3/3QK3 w - - 0 1'); // Qd1xe2 escapes check (the queen is covered by the d3 pawn)
   assert.ok(g.chess.inCheck());
   assert.ok(g.apply('w', { type: 'move', from: 'd1', to: 'e2' }).ok);
   assert.equal(g.phase, 'poker');                        // a hand is played, not free
@@ -417,4 +417,56 @@ test('in check: the king captures for free', () => {
   assert.ok(g.chess.inCheck());
   assert.ok(g.apply('w', { type: 'move', from: 'e1', to: 'd2' }).ok);
   assert.notEqual(g.phase, 'poker');
+});
+
+test('staged all-in run-out: the board comes out one street at a time, then a pause, then the result', () => {
+  let t = 0;
+  const g = new Game({ rng: mulberry(21), now: () => t, manualAdvance: true, runoutFirstMs: 1000, runoutStepMs: 500, runoutStallMs: 800, pauseMs: 100000 });
+  g.apply('w', { type: 'move', from: 'e2', to: 'e4' });
+  g.apply('b', { type: 'move', from: 'd7', to: 'd5' });
+  g.apply('w', { type: 'move', from: 'e4', to: 'd5' });
+  g.apply('w', { type: 'poker', kind: 'allin' });
+  assert.ok(g.apply('b', { type: 'poker', kind: 'call' }).ok);
+  let h = g.hand;
+  assert.equal(h.done, false);
+  assert.equal(h.runout, true);
+  assert.equal(h.board.length, 0);
+  assert.equal(h.toAct, null);
+  assert.ok(h.hole.w && h.hole.b);
+  assert.ok(g.viewFor('w').hand.hole.b, 'both hands are turned up once the cards are on their back');
+  t += 900; g.tick(); assert.equal(g.hand.board.length, 0);
+  t += 200; g.tick(); assert.equal(g.hand.board.length, 3);           // flop
+  t += 500; g.tick(); assert.equal(g.hand.board.length, 4);           // turn
+  t += 500; g.tick(); assert.equal(g.hand.board.length, 5);           // river
+  assert.equal(g.hand.done, false);                                   // stalls on the full board
+  t += 700; g.tick(); assert.equal(g.hand.done, false);
+  t += 200; g.tick(); assert.equal(g.hand.done, true);                // now the result
+  assert.ok(g.hand.result);
+});
+
+test('failed escape from check: the king still gets a move; with no king move it is checkmate', () => {
+  const g = new Game({ rng: mulberry(4) });
+  g.chess.load('k7/8/8/8/2b5/8/4r2R/4K3 w - - 0 1'); // Re1 is in check from the rook; Rxe2 loses to the bishop's cover but is legal
+  assert.ok(g.chess.inCheck());
+  assert.ok(g.apply('w', { type: 'move', from: 'h2', to: 'e2' }).ok);
+  assert.equal(g.phase, 'poker');
+  foldAlways(g, 'w');
+  assert.equal(g.phase, 'chess');
+  assert.equal(g.chess.get('h2'), undefined);            // the rook that failed is gone
+  assert.equal(g.chess.turn(), 'w');                     // still White to move
+  assert.equal(g.kingOnly, 'w');
+  const v = g.viewFor('w');
+  assert.ok(v.legal.length > 0 && v.legal.every((m) => m.from === 'e1'));
+  assert.equal(g.apply('w', { type: 'move', from: 'e1', to: 'd1' }).ok, true);
+  assert.equal(g.kingOnly, null);
+  assert.equal(g.chess.turn(), 'b');
+});
+
+test('failed escape from check with the king boxed in is checkmate', () => {
+  const g = new Game({ rng: mulberry(4) });
+  g.chess.load('4k3/8/8/8/8/3p4/4q3/3QK3 w - - 0 1');
+  g.apply('w', { type: 'move', from: 'd1', to: 'e2' });
+  foldAlways(g, 'w');
+  assert.equal(g.phase, 'over');
+  assert.deepEqual(g.result, { winner: 'b', reason: 'checkmate' });
 });

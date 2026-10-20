@@ -117,10 +117,12 @@ export function createUI(cb) {
   let seenExchange;                  // last exchange number announced (undefined until the first update)
   let lastPieces = null;
   let lastPly;                       // last chess ply drawn, to animate only new moves
-  const blankPrev = () => ({ id: null, acts: { w: '', b: '' }, bets: { w: 0, b: 0 }, stacks: null, pot: 0, street: 'preflop', doneShown: null });
+  const blankPrev = () => ({ id: null, acts: { w: '', b: '' }, bets: { w: 0, b: 0 }, stacks: null, pot: 0, street: 'preflop', doneShown: null, sweepNo: 0, oppShown: false });
   let prev = blankPrev();            // what the table showed last time, so only changes animate
   let clock = null;                  // { end, total, mode } for the visible countdown
   let introFor = 0, introUntil = 0, arrowUntil = 0, introTimer = null, introTimer2 = null, introBuilt = 0, skippedFor = 0, arrowFor = 0;
+
+  let winUntil = 0, winTimer = null, winShownFor = 0, wasTable = false;
 
   const screens = ['lobby', 'waiting', 'game', 'ai', 'table'];
   function show(name) { for (const s of screens) $(s).hidden = s !== name; }
@@ -292,8 +294,8 @@ export function createUI(cb) {
     let status;
     if (v.result) status = 'Game over';
     else if (v.phase === 'poker') status = 'Capture!';
-    else if (meta.mode === 'local') status = `${NAME[v.turn]} to move${v.inCheck ? ' (check)' : ''}`;
-    else status = v.turn === v.you ? `Your move${v.inCheck ? ' (you are in check)' : ''}` : `${meta.oppName || 'Opponent'}'s move`;
+    else if (meta.mode === 'local') status = v.kingOnly ? `${NAME[v.turn]}'s king must move` : `${NAME[v.turn]} to move${v.inCheck ? ' (check)' : ''}`;
+    else status = v.turn === v.you ? (v.kingOnly ? 'Your king must move (still in check)' : `Your move${v.inCheck ? ' (you are in check)' : ''}`) : `${meta.oppName || 'Opponent'}'s move`;
     $('status').textContent = status;
     $('btn-resign').hidden = !!v.result || meta.mode === 'local';
 
@@ -429,7 +431,7 @@ export function createUI(cb) {
     const pv = newHand ? blankPrev() : prev;
     const held = v.holdMs > 0;
     const justDone = hd.done && pv.doneShown !== hd.id;
-    const streetChanged = !newHand && !hd.done && hd.street !== pv.street;
+    const streetChanged = !newHand && !hd.done && hd.sweepNo !== pv.sweepNo;   // bets swept into the pot (a new street, or an all-in)
     const sweeping = justDone || streetChanged;   // the bets on the felt go to the pot
     const still = reducedMotion();                // no flights: show the end state straight away
     const sbSeat = hd.button, bbSeat = other(hd.button);
@@ -506,7 +508,7 @@ export function createUI(cb) {
       );
       const cards = hd.hole[seat];
       const wrap = h('div', { class: 'cards' });
-      const reveal = justDone && cards && !isMe && !local;   // the opponent's cards turning over
+      const reveal = cards && !isMe && !local && !newHand && !pv.oppShown;   // the opponent's cards turning over
       for (let i = 0; i < 2; i++) {
         const el = cards ? cardEl(cards[i]) : cardEl(null, { faceDown: true });
         if (newHand) { const k = i * 2 + (seat === sbSeat ? 1 : 0); dealQueue.push({ el, delay: 250 + k * DEAL_STEP }); }
@@ -592,6 +594,7 @@ export function createUI(cb) {
     const act = $('t-actions');
     act.replaceChildren();
     if (!hd.done && hd.toAct === me && hd.options) act.append(buildControls(v, hd, me, held));
+    else if (!hd.done && hd.runout) act.append(h('div', { class: 'turnmsg wait' }, 'All in! Dealing out the board…'));
     else if (!hd.done) act.append(h('div', { class: 'turnmsg wait' }, `Waiting for ${nm(hd.toAct)}…`));
 
     const log = $('t-log');
@@ -619,7 +622,7 @@ export function createUI(cb) {
 
     prev = {
       id: hd.id, acts: nextActs, bets: { ...hd.bets }, stacks: { ...hd.stacks }, pot: settled, potTotal: hd.pot,
-      street: hd.street, boardN: hd.board.length, doneShown: hd.done ? hd.id : null,
+      street: hd.street, boardN: hd.board.length, doneShown: hd.done ? hd.id : null, sweepNo: hd.sweepNo || 0, oppShown: !!hd.hole[opp],
     };
   }
 
@@ -630,8 +633,47 @@ export function createUI(cb) {
     $('intro').hidden = true;
   }
 
+  // The exchange is over: the winning piece grows to fill the screen and says WIN, then we go back to the board.
+  const WIN_MS = 3000;
+  function endWin() {
+    clearTimeout(winTimer);
+    winUntil = 0;
+    $('winfx').hidden = true;
+    if (lastView) update(lastView, lastMeta);
+  }
+  function startWin(v, meta) {
+    const x = v.lastExchange;
+    const piece = x.stands ? x.piece : x.captured;           // the piece that won the fight
+    const color = x.winner;
+    const local = meta.mode === 'local';
+    const mine = local || x.winner === v.you;
+    const who = local ? NAME[x.winner] : mine ? 'You' : (meta.oppName || 'Opponent');
+    const sub = x.stands
+      ? `${who} ${mine && !local ? 'take' : 'takes'} the ${PIECE[x.captured]} on ${x.to}`
+      : `${who} ${mine && !local ? 'hold' : 'holds'} ${x.to}. The ${PIECE[x.piece]} is lost`;
+    const box = $('winfx');
+    box.className = 'overlay winfx ' + (mine ? 'mine' : 'theirs');
+    box.replaceChildren(h('div', { class: 'winbox' },
+      h('div', { class: 'winpiece' }, pieceEl(color, piece)),
+      h('div', { class: 'wintext' }, 'WIN'),
+      h('div', { class: 'winsub' }, sub)));
+    box.hidden = false;
+    box.onclick = endWin;
+    Sound.play(mine ? 'win' : 'lose', 150);
+    winUntil = Date.now() + WIN_MS;
+    clearTimeout(winTimer);
+    winTimer = setTimeout(endWin, WIN_MS);
+  }
+
   function update(v, meta) {
     lastView = v; lastMeta = meta;
+    if (v.phase !== 'poker' && wasTable && introFor && v.lastExchange && v.lastExchange.no === introFor && winShownFor !== introFor) {
+      winShownFor = introFor;
+      hideIntro();
+      startWin(v, meta);
+    }
+    wasTable = v.phase === 'poker';
+    if (Date.now() < winUntil) return;   // the table stays behind the WIN screen
     if (v.phase === 'poker' && v.hand) {
       selected = null;
       if (introFor !== v.exchangeNo) {

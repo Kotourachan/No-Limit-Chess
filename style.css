@@ -353,3 +353,17 @@ button:disabled { cursor: not-allowed; filter: grayscale(0.6); }
 .sndcorner { position: absolute; top: 10px; right: 12px; }
 .sndbtn { min-width: 2.4em; }
 #lobby { position: relative; }
+
+/* exchange won: the winning piece grows, then WIN */
+.overlay.winfx { z-index: 40; background: radial-gradient(circle at center, rgba(40, 30, 6, 0.88), rgba(6, 8, 12, 0.94)); animation: fadeIn 0.25s ease-out; cursor: pointer; }
+.winbox { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 0 16px; }
+.winpiece { line-height: 1; animation: winGrow 1.1s cubic-bezier(0.2, 0.9, 0.3, 1.25) both; filter: drop-shadow(0 0 30px rgba(255, 190, 40, 0.9)); }
+.theirs .winpiece { filter: drop-shadow(0 0 30px rgba(225, 90, 90, 0.85)); }
+.winpiece .piece-glyph { font-size: min(52vw, 300px); display: block; }
+.winpiece .piece-img { width: min(52vw, 300px); height: min(52vw, 300px); }
+.wintext { margin-top: 4px; font-size: min(22vw, 120px); font-weight: 900; letter-spacing: 0.12em; padding-left: 0.12em; color: #ffc531; text-shadow: 0 0 24px rgba(255, 190, 40, 0.85), 0 4px 0 #8a5a06; animation: winText 0.6s 0.7s cubic-bezier(0.2, 0.9, 0.3, 1.4) both; }
+.theirs .wintext { color: #ff8a8a; text-shadow: 0 0 24px rgba(225, 90, 90, 0.8), 0 4px 0 #6a1a1a; }
+.winsub { margin-top: 6px; color: #dfe3ea; font-size: 1.05rem; animation: fadeIn 0.5s 1.2s both; }
+@keyframes winGrow { 0% { transform: scale(0.05) rotate(-18deg); opacity: 0; } 60% { opacity: 1; } 100% { transform: scale(1) rotate(0); opacity: 1; } }
+@keyframes winText { from { transform: scale(2.2); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .winpiece, .wintext, .winsub, .overlay.winfx { animation: none; } }

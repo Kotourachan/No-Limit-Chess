@@ -41,9 +41,14 @@ export class Game {
     this.introMs = opts.introMs || 0;
     this.dealMs = opts.dealMs || 0;
     this.bufferMs = opts.bufferMs || 0;
+    this.runoutFirstMs = opts.runoutFirstMs || 0;   // all-in: pause before the first street is dealt
+    this.runoutStepMs = opts.runoutStepMs || 0;     // all-in: time between streets (0 = deal everything at once)
+    this.runoutStallMs = opts.runoutStallMs || 0;   // all-in: pause on the full board before the result
+    this.runoutAt = null;
     this.now = opts.now || (() => Date.now());
     this.chess = new Chess();
     this.phase = 'chess'; // 'chess' | 'poker' | 'over'
+    this.kingOnly = null; // set after a failed capture while in check: that side must now move its king
     this.pending = null;  // the capture being fought over
     this.match = null;    // { capturer, stacks, button, handNo }
     this.hand = null;
@@ -101,6 +106,7 @@ export class Game {
     if (this.chess.turn() !== seat) return { ok: false, error: 'Not your turn' };
     const cands = this.chess.moves({ square: from, verbose: true }).filter((m) => m.to === to);
     if (!cands.length) return { ok: false, error: 'Illegal move' };
+    if (this.kingOnly === seat && cands[0].piece !== 'k') return { ok: false, error: 'You are still in check: the king has to move' };
     const m = cands.find((x) => x.promotion === (promotion || 'q')) || cands[0];
     const R = this.rules;
 
@@ -140,13 +146,20 @@ export class Game {
   _dealHand() {
     const R = this.rules;
     const mt = this.match;
-    this.hand = P.startHand({ stacks: mt.stacks, button: mt.button, initiator: mt.capturer, ante: 0, sb: R.sb, bb: R.bb, rng: this.rng });
+    this.hand = P.startHand({ stacks: mt.stacks, button: mt.button, initiator: mt.capturer, ante: 0, sb: R.sb, bb: R.bb, rng: this.rng, staged: this.runoutStepMs > 0 });
     this.hand.id = ++this.handSeq;
     this.hand.log.forEach((l) => this.say(l));
     // A short stack can be all-in from the blinds alone, which finishes the hand immediately.
     if (this.hand.done) { this.holdUntil = null; this._afterHand(); return; }
     this._hold(this.dealMs + (mt.handNo === 1 ? this.captureMs + this.introMs : 0));
     this._armTimer();
+    if (this.hand.runout) this._startRunout(this.holdRemaining());   // all in from the blinds
+  }
+
+  // Both players are all in: the rest of the board comes out a street at a time.
+  _startRunout(extra = 0) {
+    this.deadline = null;
+    this.runoutAt = this.now() + extra + this.runoutFirstMs;
   }
 
   _hold(ms) { this.holdUntil = ms > 0 ? this.now() + ms : null; }
@@ -173,6 +186,7 @@ export class Game {
     if (this.clockMode === 'ot' && this.otStart != null) this.ot[seat] = Math.max(0, this.ot[seat] - Math.max(0, t - this.otStart));
     for (const l of this.hand.log.slice(logStart)) this.say(l);
     if (this.hand.done) this._afterHand();
+    else if (this.hand.runout) { this.holdUntil = null; this._startRunout(this.bufferMs); }
     else { this._hold(this.bufferMs); this._armTimer(); }
     return { ok: true };
   }
@@ -189,6 +203,7 @@ export class Game {
     };
     this.deadline = null;
     this.holdUntil = null;
+    this.runoutAt = null;
     if (this.manual) {
       const out = this._busted();
       h.matchOver = !!out;
@@ -246,6 +261,14 @@ export class Game {
     const t = this.now();
     let changed = false;
     if (this.holdUntil && t >= this.holdUntil) { this.holdUntil = null; changed = true; }
+    if (this.runoutAt && t >= this.runoutAt && this.hand && this.hand.runout && !this.hand.done) {
+      const h = this.hand, logStart = h.log.length;
+      P.runoutStep(h);
+      for (const l of h.log.slice(logStart)) this.say(l);
+      if (h.done) this._afterHand();
+      else this.runoutAt = t + (h.board.length >= 5 ? this.runoutStallMs : this.runoutStepMs);
+      return true;
+    }
     if (this.advanceAt && t >= this.advanceAt) return this.advance().ok || changed;
     if (this.deadline && t >= this.deadline && this.hand && !this.hand.done) {
       const seat = this.hand.toAct;
@@ -273,6 +296,7 @@ export class Game {
   }
 
   _commit(seat, m) {
+    this.kingOnly = null;
     const mv = this.chess.move({ from: m.from, to: m.to, promotion: m.promotion });
     this.ply++;
     this.lastMove = { from: mv.from, to: mv.to };
@@ -290,18 +314,30 @@ export class Game {
     c.remove(p.from);
     this.captured[p.color].push(p.piece);
     const parts = c.fen().split(' ');
-    parts[1] = opp;
+    // Escaping check with a piece that lost the exchange: the check stands, but the king still gets a move.
+    parts[1] = wasInCheck ? p.color : opp;
     parts[3] = '-';
-    if (opp === 'w') parts[5] = String(Number(parts[5]) + 1);
+    if (!wasInCheck && opp === 'w') parts[5] = String(Number(parts[5]) + 1);
     c.load(parts.join(' '), { skipValidation: true });
     this.ply++;
     this.lastMove = { from: p.from, to: p.to, lost: true };
     this.lastCapture = null;
+    if (wasInCheck) {
+      const kingMoves = c.moves({ verbose: true }).filter((m) => m.piece === 'k');
+      if (!kingMoves.length) {
+        this.say(`${NAME[p.color]} lost the exchange while in check and the king cannot move: checkmate`);
+        this._end(opp, 'checkmate');
+        return;
+      }
+      this.kingOnly = p.color;
+      this.say(`${NAME[p.color]} is still in check: the king must move`);
+      return;
+    }
     // If that piece was shielding its own king (a pinned piece that took its pinner), the
     // king is now en prise on the opponent's move.
     if (this._kingAttacked(p.color)) {
-      this.say(wasInCheck ? `${NAME[p.color]} lost the exchange while in check: checkmate` : `${NAME[p.color]}'s king is exposed and falls`);
-      this._end(opp, wasInCheck ? 'checkmate' : 'king exposed');
+      this.say(`${NAME[p.color]}'s king is exposed and falls`);
+      this._end(opp, 'king exposed');
       return;
     }
     this._checkEnd();
@@ -327,7 +363,8 @@ export class Game {
   }
 
   legalMoves() {
-    return this.chess.moves({ verbose: true }).map((m) => ({ from: m.from, to: m.to, capture: !!m.captured, promotion: m.promotion || null }));
+    const kingOnly = this.kingOnly === this.chess.turn();
+    return this.chess.moves({ verbose: true }).filter((m) => !kingOnly || m.piece === 'k').map((m) => ({ from: m.from, to: m.to, capture: !!m.captured, promotion: m.promotion || null }));
   }
 
   viewFor(seat, { god = false } = {}) {
@@ -335,7 +372,7 @@ export class Game {
     let hand = null;
     if (h) {
       const done = h.done;
-      const rev = (s) => god || s === seat || (done && h.result.reveal[s]);
+      const rev = (s) => god || s === seat || h.runout || (done && h.result.reveal[s]);
       hand = {
         id: h.id, handNo: this.match ? this.match.handNo : 1,
         street: h.street, board: [...h.board],
@@ -347,6 +384,7 @@ export class Game {
         options: h.toAct && !done ? P.options(h, h.toAct) : null,
         acts: { w: h.acts.w, b: h.acts.b },
         lastActor: h.lastActor,
+        runout: !!h.runout, sweepNo: h.sweepNo,
         sweep: h.sweep ? { from: h.sweep.from, bets: { ...h.sweep.bets } } : null,
         endBets: done && h.endBets ? { ...h.endBets } : null,
         done,
@@ -369,6 +407,7 @@ export class Game {
       fen: this.chess.fen(),
       turn: this.chess.turn(),
       inCheck: this.chess.inCheck(),
+      kingOnly: this.kingOnly || null,
       phase: this.phase,
       captured: { w: [...this.captured.w], b: [...this.captured.b] },
       legal: this.phase === 'chess' && this.chess.turn() === seat ? this.legalMoves() : [],

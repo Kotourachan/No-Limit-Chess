@@ -86,7 +86,7 @@ function post(h, seat, amt) {
   return a;
 }
 
-export function startHand({ stacks, button, initiator, ante = 0, sb, bb, rng }) {
+export function startHand({ stacks, button, initiator, ante = 0, sb, bb, rng, staged = false }) {
   const deck = shuffledDeck(rng);
   const nb = other(button);
   const h = {
@@ -106,6 +106,9 @@ export function startHand({ stacks, button, initiator, ante = 0, sb, bb, rng }) 
     toAct: button,
     acts: { w: null, b: null }, // last action of each seat, shown at the table
     lastActor: null,
+    staged,         // when both are all in, deal the rest of the board in steps (see runoutStep)
+    runout: false,  // true while the remaining streets are being dealt one at a time
+    sweepNo: 0,     // counts bet sweeps, so the UI knows when chips move to the pot
     sweep: null,    // bets collected into the pot when a street ended: { from, bets }
     endBets: null,  // bets on the table when the hand ended (before any refund)
     done: false,
@@ -138,14 +141,47 @@ function dealTo(h, n) {
   while (h.board.length < n) h.board.push(h.deck.pop());
 }
 
+// Gives back any uncalled excess to whoever bet it.
+function refundExcess(h) {
+  if (h.committed.w !== h.committed.b) {
+    const big = h.committed.w > h.committed.b ? 'w' : 'b';
+    const ex = Math.abs(h.committed.w - h.committed.b);
+    h.stacks[big] += ex;
+    h.committed[big] -= ex;
+  }
+}
+
+// Staged all-in run-out: the caller deals one street per call, then calls once more to show down.
+export function runoutStep(h) {
+  if (!h.runout || h.done) return;
+  if (h.board.length >= 5) { h.runout = false; h.street = 'showdown'; finish(h, {}); return; }
+  h.street = h.board.length === 0 ? 'flop' : h.board.length === 3 ? 'turn' : 'river';
+  dealTo(h, h.street === 'flop' ? 3 : h.street === 'turn' ? 4 : 5);
+  h.log.push(`-- ${h.street}: ${h.board.map(cardStr).join(' ')}`);
+}
+
 function endRound(h) {
   const allIn = h.stacks.w === 0 || h.stacks.b === 0;
-  if (h.street === 'river' || allIn) {
+  if (h.street === 'river' || (allIn && !h.staged)) {
     dealTo(h, 5);
     h.street = 'showdown';
     return finish(h, {});
   }
+  if (allIn) {
+    refundExcess(h);
+    const m = Math.min(h.bets.w, h.bets.b);
+    h.sweep = { from: h.street, bets: { w: m, b: m } };
+    h.sweepNo++;
+    h.bets = { w: 0, b: 0 };
+    h.acted = { w: false, b: false };
+    h.currentBet = 0;
+    h.runout = true;
+    h.toAct = null;
+    h.log.push('-- all in: the board is dealt');
+    return;
+  }
   h.sweep = { from: h.street, bets: { w: h.bets.w, b: h.bets.b } };
+  h.sweepNo++;
   h.street = h.street === 'preflop' ? 'flop' : h.street === 'flop' ? 'turn' : 'river';
   dealTo(h, h.street === 'flop' ? 3 : h.street === 'turn' ? 4 : 5);
   h.bets = { w: 0, b: 0 };
@@ -158,13 +194,7 @@ function endRound(h) {
 
 function finish(h, { folder }) {
   h.endBets = { w: h.bets.w, b: h.bets.b };
-  // Return any uncalled excess to whoever bet it.
-  if (h.committed.w !== h.committed.b) {
-    const big = h.committed.w > h.committed.b ? 'w' : 'b';
-    const ex = Math.abs(h.committed.w - h.committed.b);
-    h.stacks[big] += ex;
-    h.committed[big] -= ex;
-  }
+  refundExcess(h);
   const pot = h.dead + h.committed.w + h.committed.b;
   const result = { pot, reason: folder ? 'fold' : 'showdown', reveal: { w: false, b: false }, names: { w: null, b: null } };
   if (folder) {

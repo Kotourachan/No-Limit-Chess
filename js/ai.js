@@ -66,7 +66,7 @@ export function chooseMove(game, seat, level = 'normal', rng = Math.random) {
   const noise = level === 'easy' ? 60 : 15;
   const inCheck = c.inCheck();
   const base = inCheck ? -90000 : evalSTM(c) - 15; // a failed capture wastes the move (and loses the game if it was escaping check)
-  const moves = c.moves({ verbose: true });
+  const moves = c.moves({ verbose: true }).filter((m) => game.kingOnly !== seat || m.piece === 'k');
   // shuffle so ties are not always broken the same way
   for (let i = moves.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [moves[i], moves[j]] = [moves[j], moves[i]]; }
   let best = null, bestScore = -Infinity;

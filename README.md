@@ -37,7 +37,8 @@ All numbers are in `js/rules.js`.
 - Capturer wins or splits the mini-match: the capture stands. Capturer loses: the **capturing piece is lost**, the defender stays put and the
   turn passes. A pinned piece that loses exposes its king and loses the game.
 - **King captures are automatic** (no hand). Any other piece must win the exchange, even when capturing to escape check:
-  if it loses, the capturing piece is lost, the check stands and the king falls.
+  if it loses, the capturing piece is lost and the check stands, but you still get a move: **the king must move** (king captures stay free).
+  If the king has no legal move, it's checkmate.
 - The capturer must show at showdown. The defender may muck a losing hand.
 - **Capture sequence:** a glowing arrow and a CAPTURE banner appear on the board for 2.5 s, then a ~12 s pop-up with both stacks.
   Each player can press **Skip to the table** on their own screen; the shared timer keeps running, so nobody can act early and the other player can keep reading.
@@ -46,6 +47,9 @@ All numbers are in `js/rules.js`.
   Chips are drawn one chip per BB.
 - **Clocks:** 20 s per decision, then a **30 s overtime bank per player per exchange** (refills for every new exchange, not shared).
   Running out means check if free, otherwise fold. After every decision there is a 2 s pause where the move is highlighted on the player's card.
+- **All-in run-out:** once both players are all in, both hands are turned up and the board is dealt one street at a time
+  (2.6 s after the last action, then 2.3 s between flop, turn and river), with a 3.2 s pause on the full board before the result.
+- **Winning the exchange:** the winning piece grows to fill the screen with a big WIN (3 s, tap to skip), then the board returns.
 - Game ends on checkmate, stalemate or draw rules, resignation, or a king loss. Pawns auto-promote to queens for now.
 - **Local test** mode uses a shorter pop-up and pause, with no clocks.
 
